@@ -1,0 +1,6 @@
+{
+  "name": "Prism Protocol",
+  "description": "Massive multiplayer 3D first-person laser tag arena with custom loadouts, skins, seasonal battle pass, cloud saves, real-time friends & chat, and 5 tactical arenas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
