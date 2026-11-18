@@ -64,15 +64,17 @@ service cloud.firestore {
         code.size() <= 32;
     }
 
-    function isNonNegNumber(val, maxVal) {
-      return (val is int && val >= 0 && val <= maxVal) ||
-        (val is float && val >= 0.0 && val <= float(maxVal));
+    function isNonNegInt(val, maxVal) {
+      return val is int && val >= 0 && val <= maxVal;
     }
 
-    function isValidIntList(arr, maxLen) {
-      return arr is list &&
-        arr.size() <= maxLen &&
-        (arr.size() == 0 || arr[0] is int);
+    function isBoundedFloatOrInt(val, maxInt, maxFloat) {
+      return (val is int && val >= 0 && val <= maxInt) ||
+        (val is float && val >= 0.0 && val <= maxFloat);
+    }
+
+    function isValidTierList(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen;
     }
 
     function isValidSkinList(arr, maxLen) {
@@ -84,40 +86,36 @@ service cloud.firestore {
 
     function isValidStats(stats) {
       return stats is map &&
-        stats.keys().hasAll(['matchesPlayed', 'wins', 'tags', 'deaths', 'shotsFired', 'shotsHit']) &&
         stats.keys().hasOnly(['matchesPlayed', 'wins', 'tags', 'deaths', 'shotsFired', 'shotsHit']) &&
-        isNonNegNumber(stats.matchesPlayed, 10000000) &&
-        isNonNegNumber(stats.wins, 10000000) &&
-        isNonNegNumber(stats.tags, 100000000) &&
-        isNonNegNumber(stats.deaths, 100000000) &&
-        isNonNegNumber(stats.shotsFired, 1000000000) &&
-        isNonNegNumber(stats.shotsHit, 1000000000);
+        stats.keys().size() == 6 &&
+        isNonNegInt(stats.matchesPlayed, 10000000) &&
+        isNonNegInt(stats.wins, 10000000) &&
+        isNonNegInt(stats.tags, 100000000) &&
+        isNonNegInt(stats.deaths, 100000000) &&
+        isNonNegInt(stats.shotsFired, 1000000000) &&
+        isNonNegInt(stats.shotsHit, 1000000000);
     }
 
     function isValidSettings(s) {
       return s is map &&
-        s.keys().hasAll([
-          'graphicsQuality', 'shadowQuality', 'renderDistance', 'vsync', 'showFps',
-          'fpsCap', 'fov', 'mouseSensitivity', 'shadowsEnabled', 'particlesEnabled',
-          'audioEnabled', 'masterVolume', 'darkMode', 'language', 'crossPlatformEnabled'
-        ]) &&
         s.keys().hasOnly([
           'graphicsQuality', 'shadowQuality', 'renderDistance', 'vsync', 'showFps',
           'fpsCap', 'fov', 'mouseSensitivity', 'shadowsEnabled', 'particlesEnabled',
           'audioEnabled', 'masterVolume', 'darkMode', 'language', 'crossPlatformEnabled'
         ]) &&
+        s.keys().size() == 15 &&
         s.graphicsQuality is string && s.graphicsQuality in ['low', 'medium', 'high', 'ultra'] &&
         s.shadowQuality is string && s.shadowQuality in ['off', 'low', 'medium', 'high', 'ultra'] &&
-        isNonNegNumber(s.renderDistance, 1000) &&
+        isNonNegInt(s.renderDistance, 1000) &&
         s.vsync is bool &&
         s.showFps is bool &&
         s.fpsCap is string && s.fpsCap in ['screen_locked', '60', '120', '165', '240', 'unlimited'] &&
-        isNonNegNumber(s.fov, 150) &&
-        isNonNegNumber(s.mouseSensitivity, 20) &&
+        isNonNegInt(s.fov, 150) &&
+        isBoundedFloatOrInt(s.mouseSensitivity, 20, 20.0) &&
         s.shadowsEnabled is bool &&
         s.particlesEnabled is bool &&
         s.audioEnabled is bool &&
-        isNonNegNumber(s.masterVolume, 1) &&
+        isBoundedFloatOrInt(s.masterVolume, 1, 1.0) &&
         s.darkMode is bool &&
         s.language is string && s.language in ['en', 'es', 'sk', 'fr', 'ja'] &&
         s.crossPlatformEnabled is bool;
@@ -125,14 +123,11 @@ service cloud.firestore {
 
     function isValidKeybinds(k) {
       return k is map &&
-        k.keys().hasAll([
-          'moveForward', 'moveBackward', 'moveLeft', 'moveRight', 'jump', 'dash',
-          'reload', 'chat', 'pause', 'slot1', 'slot2', 'slot3', 'slot4'
-        ]) &&
         k.keys().hasOnly([
           'moveForward', 'moveBackward', 'moveLeft', 'moveRight', 'jump', 'dash',
           'reload', 'chat', 'pause', 'slot1', 'slot2', 'slot3', 'slot4'
         ]) &&
+        k.keys().size() == 13 &&
         isValidKeyCode(k.moveForward) &&
         isValidKeyCode(k.moveBackward) &&
         isValidKeyCode(k.moveLeft) &&
@@ -166,16 +161,16 @@ service cloud.firestore {
           'easterEggUnlocked', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
           'createdAt', 'updatedAt'
         ]) &&
-        isValidId(data.accountId) &&
+        data.accountId is string &&
         data.accountId == request.auth.uid &&
         isValidNickname(data.nickname) &&
         isValidPlatform(data.platform) &&
-        isNonNegNumber(data.credits, 10000000) &&
-        isNonNegNumber(data.xp, 100000000) &&
-        isNonNegNumber(data.battlePassXp, 100000000) &&
+        isNonNegInt(data.credits, 10000000) &&
+        isNonNegInt(data.xp, 100000000) &&
+        isNonNegInt(data.battlePassXp, 100000000) &&
         data.battlePassPremium is bool &&
-        isValidIntList(data.claimedFreeTiers, 50) &&
-        isValidIntList(data.claimedPremiumTiers, 50) &&
+        isValidTierList(data.claimedFreeTiers, 50) &&
+        isValidTierList(data.claimedPremiumTiers, 50) &&
         isValidSkinList(data.unlockedWeaponSkins, 100) &&
         isValidSkinList(data.unlockedAvatarSkins, 100) &&
         data.equippedWeaponId is string &&
