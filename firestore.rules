@@ -50,15 +50,13 @@ service cloud.firestore {
     function isValidSkinId(id) {
       return id is string &&
         id.size() >= 1 &&
-        id.size() <= 64 &&
-        id.matches('^[a-zA-Z0-9_\\-]+$');
+        id.size() <= 64;
     }
 
     function isValidKeyCode(code) {
       return code is string &&
         code.size() >= 1 &&
-        code.size() <= 32 &&
-        code.matches('^[a-zA-Z0-9]+$');
+        code.size() <= 32;
     }
 
     function isNonNegNumber(val, maxVal) {

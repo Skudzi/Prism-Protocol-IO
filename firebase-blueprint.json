@@ -58,19 +58,19 @@
       "description": "Custom keyboard bindings mapped to Web KeyboardEvent.code identifiers.",
       "type": "object",
       "properties": {
-        "moveForward": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
-        "moveBackward": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
-        "moveLeft": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
-        "moveRight": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
-        "jump": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
-        "dash": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
-        "reload": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
-        "chat": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
-        "pause": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
-        "slot1": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
-        "slot2": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
-        "slot3": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
-        "slot4": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" }
+        "moveForward": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "moveBackward": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "moveLeft": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "moveRight": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "jump": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "dash": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "reload": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "chat": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "pause": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "slot1": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "slot2": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "slot3": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "slot4": { "type": "string", "minLength": 1, "maxLength": 32 }
       },
       "required": [
         "moveForward",
@@ -124,14 +124,12 @@
         "equippedWeaponSkinId": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 64,
-          "pattern": "^[a-zA-Z0-9_\\-]+$"
+          "maxLength": 64
         },
         "equippedAvatarSkinId": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 64,
-          "pattern": "^[a-zA-Z0-9_\\-]+$"
+          "maxLength": 64
         },
         "tutorialCompleted": { "type": "boolean" },
         "easterEggUnlocked": { "type": "boolean" },

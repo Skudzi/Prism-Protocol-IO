@@ -1,4 +1,6 @@
 import React from 'react';
+import { signOut } from 'firebase/auth';
+import { auth } from '../lib/firebase';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -32,13 +34,24 @@ export class ErrorBoundary extends React.Component<
           <div className="max-w-md rounded-xl border border-rose-500/40 bg-slate-900/90 p-6 shadow-2xl">
             <h1 className="text-lg font-bold text-rose-400">Sync / Runtime Error</h1>
             <p className="mt-2 break-words text-xs text-slate-300">{this.state.message}</p>
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="mt-4 rounded-lg bg-cyan-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-400 cursor-pointer"
-            >
-              Reload Prism Protocol
-            </button>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded-lg bg-cyan-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-400 cursor-pointer"
+              >
+                Reload Prism Protocol
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void signOut(auth).finally(() => window.location.reload());
+                }}
+                className="rounded-lg border border-slate-600 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800 cursor-pointer"
+              >
+                Sign Out &amp; Continue Locally
+              </button>
+            </div>
           </div>
         </div>
       );

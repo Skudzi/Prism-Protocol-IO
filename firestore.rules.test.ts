@@ -25,3 +25,8 @@ test('firestore.rules enforces immutable accountId/createdAt, server timestamps,
   assert.match(rulesText, /isParentUserOwner\(userId\)/);
   assert.match(rulesText, /resource\.data\.ownerId == request\.auth\.uid/);
 });
+
+test('firestore.rules stays under Firestore 10-call regex .matches() limit', () => {
+  const matchesCalls = rulesText.match(/\.matches\(/g) ?? [];
+  assert.ok(matchesCalls.length <= 5, `Too many .matches() definitions (${matchesCalls.length})`);
+});
