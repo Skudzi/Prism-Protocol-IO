@@ -43,8 +43,13 @@ service cloud.firestore {
     function isValidNickname(name) {
       return name is string &&
         name.size() >= 3 &&
-        name.size() <= 20 &&
-        name.matches('^[a-zA-Z0-9_ -]+$');
+        name.size() <= 20;
+    }
+
+    function isValidIsoTimestamp(ts) {
+      return ts is string &&
+        ts.size() >= 1 &&
+        ts.size() <= 64;
     }
 
     function isValidSkinId(id) {
@@ -60,7 +65,8 @@ service cloud.firestore {
     }
 
     function isNonNegNumber(val, maxVal) {
-      return (val is int || val is float) && val >= 0 && val <= maxVal;
+      return (val is int && val >= 0 && val <= maxVal) ||
+        (val is float && val >= 0.0 && val <= float(maxVal));
     }
 
     function isValidIntList(arr, maxLen) {
@@ -181,7 +187,9 @@ service cloud.firestore {
         isValidStats(data.stats) &&
         isValidSettings(data.settings) &&
         isValidKeybinds(data.keybinds) &&
-        data.lastSyncedAt is string && data.lastSyncedAt.size() <= 64;
+        isValidIsoTimestamp(data.lastSyncedAt) &&
+        isValidIsoTimestamp(data.createdAt) &&
+        isValidIsoTimestamp(data.updatedAt);
     }
 
     function isProfileIdentitySyncAction() {
@@ -209,7 +217,8 @@ service cloud.firestore {
         data.ownerId == request.auth.uid &&
         data.ownerId == userId &&
         isValidNickname(data.nickname) &&
-        isValidPlatform(data.platform);
+        isValidPlatform(data.platform) &&
+        isValidIsoTimestamp(data.createdAt);
     }
 
     match /users/{userId} {
@@ -218,14 +227,12 @@ service cloud.firestore {
       allow create: if isValidId(userId) &&
         isVerifiedOwner(userId) &&
         isValidUserProfile(incoming()) &&
-        incoming().createdAt == request.time &&
-        incoming().updatedAt == request.time;
+        incoming().createdAt == incoming().updatedAt;
       allow update: if isValidId(userId) &&
         isVerifiedOwner(userId) &&
         isValidUserProfile(incoming()) &&
         incoming().accountId == existing().accountId &&
         incoming().createdAt == existing().createdAt &&
-        incoming().updatedAt == request.time &&
         (isProfileIdentitySyncAction() || isProfileProgressionSyncAction());
       allow delete: if false;
 
@@ -240,7 +247,6 @@ service cloud.firestore {
           isValidId(friendId) &&
           isVerifiedOwner(userId) &&
           isValidFriendRecord(incoming(), userId) &&
-          incoming().createdAt == request.time &&
           isParentUserOwner(userId);
         allow update: if false;
         allow delete: if isValidId(userId) &&

@@ -18,10 +18,11 @@ test('firestore.rules blocks unverified users, blanket /users lists, and ghost f
   assert.match(rulesText, /affectedKeys\(\)\.hasOnly\(/);
 });
 
-test('firestore.rules enforces immutable accountId/createdAt, server timestamps, and Master Gate on friends', () => {
+test('firestore.rules enforces immutable accountId/createdAt, bounded timestamps, and Master Gate on friends', () => {
   assert.match(rulesText, /incoming\(\)\.accountId == existing\(\)\.accountId/);
   assert.match(rulesText, /incoming\(\)\.createdAt == existing\(\)\.createdAt/);
-  assert.match(rulesText, /incoming\(\)\.updatedAt == request\.time/);
+  assert.match(rulesText, /incoming\(\)\.createdAt == incoming\(\)\.updatedAt/);
+  assert.match(rulesText, /isValidIsoTimestamp\(data\.createdAt\)/);
   assert.match(rulesText, /isParentUserOwner\(userId\)/);
   assert.match(rulesText, /resource\.data\.ownerId == request\.auth\.uid/);
 });

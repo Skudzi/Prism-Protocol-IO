@@ -5,7 +5,6 @@ import {
   getDoc,
   onSnapshot,
   query,
-  serverTimestamp,
   setDoc,
   updateDoc,
   where,
@@ -222,88 +221,106 @@ export function sanitizeProfileForFirestore(
   };
 }
 
+const profileOpQueue = new Map<string, Promise<unknown>>();
+
+function enqueueProfileOp<T>(uid: string, task: () => Promise<T>): Promise<T> {
+  const prev = profileOpQueue.get(uid) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(task);
+  profileOpQueue.set(uid, next);
+  return next;
+}
+
 export async function loadOrCreateUserCloudProfile(
   uid: string,
   localProfile: PlayerCloudProfile,
   displayName?: string | null
 ): Promise<PlayerCloudProfile> {
-  const docPath = `users/${uid}`;
-  const ref = doc(db, 'users', uid);
+  return enqueueProfileOp(uid, async () => {
+    const docPath = `users/${uid}`;
+    const ref = doc(db, 'users', uid);
 
-  let snap;
-  try {
-    snap = await getDoc(ref);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, docPath);
-  }
+    let snap;
+    try {
+      snap = await getDoc(ref);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, docPath);
+    }
 
-  if (snap.exists()) {
-    const data = snap.data() as PlayerCloudProfile;
-    return sanitizeProfileForFirestore(uid, {
-      ...createDefaultProfile(data.nickname || 'Vanguard01'),
-      ...data,
+    if (snap.exists()) {
+      const data = snap.data() as PlayerCloudProfile;
+      return sanitizeProfileForFirestore(uid, {
+        ...createDefaultProfile(data.nickname || 'Vanguard01'),
+        ...data,
+        accountId: uid,
+      });
+    }
+
+    // First-ever cloud login for this user: seed cloud save with their current local progress
+    const seededNick =
+      localProfile.nickname && localProfile.nickname !== 'Vanguard01'
+        ? localProfile.nickname
+        : sanitizeNickname(displayName, 'Vanguard01');
+
+    const payload = sanitizeProfileForFirestore(uid, {
+      ...localProfile,
       accountId: uid,
+      nickname: seededNick,
     });
-  }
 
-  // First-ever cloud login for this user: seed cloud save with their current local progress
-  const seededNick =
-    localProfile.nickname && localProfile.nickname !== 'Vanguard01'
-      ? localProfile.nickname
-      : sanitizeNickname(displayName, 'Vanguard01');
+    const nowIso = new Date().toISOString().slice(0, 64);
 
-  const payload = sanitizeProfileForFirestore(uid, {
-    ...localProfile,
-    accountId: uid,
-    nickname: seededNick,
+    try {
+      await setDoc(ref, {
+        ...payload,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, docPath);
+    }
+
+    return payload;
   });
-
-  try {
-    await setDoc(ref, {
-      ...payload,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, docPath);
-  }
-
-  return payload;
 }
 
 export async function saveUserCloudProfile(
   uid: string,
   profile: PlayerCloudProfile
 ): Promise<PlayerCloudProfile> {
-  const docPath = `users/${uid}`;
-  const ref = doc(db, 'users', uid);
-  const sanitized = sanitizeProfileForFirestore(uid, profile);
+  return enqueueProfileOp(uid, async () => {
+    const docPath = `users/${uid}`;
+    const ref = doc(db, 'users', uid);
+    const sanitized = sanitizeProfileForFirestore(uid, profile);
 
-  try {
-    const existing = await getDoc(ref);
-    if (!existing.exists()) {
-      await setDoc(ref, {
-        ...sanitized,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    } else {
-      const { accountId: _ignore, ...updatableFields } = sanitized;
-      await updateDoc(ref, {
-        ...updatableFields,
-        updatedAt: serverTimestamp(),
-      });
+    const nowIso = new Date().toISOString().slice(0, 64);
+
+    try {
+      const existing = await getDoc(ref);
+      if (!existing.exists()) {
+        await setDoc(ref, {
+          ...sanitized,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+      } else {
+        const { accountId: _ignore, ...updatableFields } = sanitized;
+        await updateDoc(ref, {
+          ...updatableFields,
+          updatedAt: nowIso,
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, docPath);
     }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, docPath);
-  }
 
-  return sanitized;
+    return sanitized;
+  });
 }
 
 export function subscribeUserFriends(
   uid: string,
-  onFriends: (friends: FriendEntry[]) => void
+  onFriends: (friends: FriendEntry[]) => void,
+  onError?: (err: Error) => void
 ): Unsubscribe {
   const path = `users/${uid}/friends`;
   const q = query(collection(db, 'users', uid, 'friends'), where('ownerId', '==', uid));
@@ -321,7 +338,15 @@ export function subscribeUserFriends(
       onFriends(list);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.LIST, path);
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch (e) {
+        if (onError) {
+          onError(e instanceof Error ? e : new Error(String(e)));
+        } else {
+          throw e;
+        }
+      }
     }
   );
 }
@@ -344,7 +369,7 @@ export async function addUserCloudFriend(
       ownerId: uid,
       nickname: cleanNick,
       platform: VALID_PLATFORMS.includes(platform) ? platform : 'Web',
-      createdAt: serverTimestamp(),
+      createdAt: new Date().toISOString().slice(0, 64),
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, docPath);

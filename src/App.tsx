@@ -251,9 +251,15 @@ export default function App() {
             }
           );
 
-          unsubFriends = subscribeUserFriends(uid, (nextFriends) => {
-            setCloudFriends(nextFriends);
-          });
+          unsubFriends = subscribeUserFriends(
+            uid,
+            (nextFriends) => {
+              setCloudFriends(nextFriends);
+            },
+            (err) => {
+              setCloudFatalError(err);
+            }
+          );
         })
         .catch((err) => {
           setSyncStatus('Sync Error');

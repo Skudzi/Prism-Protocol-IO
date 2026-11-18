@@ -102,8 +102,7 @@
         "nickname": {
           "type": "string",
           "minLength": 3,
-          "maxLength": 20,
-          "pattern": "^[a-zA-Z0-9_ -]+$"
+          "maxLength": 20
         },
         "platform": {
           "type": "string",
@@ -137,8 +136,8 @@
         "settings": { "$ref": "PlayerSettings" },
         "keybinds": { "$ref": "PlayerKeybinds" },
         "lastSyncedAt": { "type": "string", "maxLength": 64 },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
       },
       "required": [
         "accountId",
@@ -179,14 +178,13 @@
         "nickname": {
           "type": "string",
           "minLength": 3,
-          "maxLength": 20,
-          "pattern": "^[a-zA-Z0-9_ -]+$"
+          "maxLength": 20
         },
         "platform": {
           "type": "string",
           "enum": ["PC", "Web", "Mobile", "Console"]
         },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 }
       },
       "required": ["ownerId", "nickname", "platform", "createdAt"]
     }
