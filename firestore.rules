@@ -44,7 +44,7 @@ service cloud.firestore {
       return name is string &&
         name.size() >= 3 &&
         name.size() <= 20 &&
-        name.matches('^[a-zA-Z0-9_\\- ]+$');
+        name.matches('^[a-zA-Z0-9_ -]+$');
     }
 
     function isValidSkinId(id) {
@@ -181,9 +181,7 @@ service cloud.firestore {
         isValidStats(data.stats) &&
         isValidSettings(data.settings) &&
         isValidKeybinds(data.keybinds) &&
-        data.lastSyncedAt is string && data.lastSyncedAt.size() <= 64 &&
-        data.createdAt is timestamp &&
-        data.updatedAt is timestamp;
+        data.lastSyncedAt is string && data.lastSyncedAt.size() <= 64;
     }
 
     function isProfileIdentitySyncAction() {
@@ -211,8 +209,7 @@ service cloud.firestore {
         data.ownerId == request.auth.uid &&
         data.ownerId == userId &&
         isValidNickname(data.nickname) &&
-        isValidPlatform(data.platform) &&
-        data.createdAt is timestamp;
+        isValidPlatform(data.platform);
     }
 
     match /users/{userId} {
