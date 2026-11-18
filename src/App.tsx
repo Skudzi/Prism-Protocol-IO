@@ -44,6 +44,19 @@ import {
   WeaponId,
 } from './game/types';
 import { LANGUAGES, t } from './i18n/translations';
+import { onAuthStateChanged, signInWithPopup, signOut, type User as FirebaseUser } from 'firebase/auth';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { auth, db, googleProvider } from './lib/firebase';
+import {
+  addUserCloudFriend,
+  handleFirestoreError,
+  loadOrCreateUserCloudProfile,
+  OperationType,
+  sanitizeNickname,
+  sanitizeProfileForFirestore,
+  saveUserCloudProfile,
+  subscribeUserFriends,
+} from './lib/firebaseCloud';
 
 type HubTab =
   | null
@@ -126,10 +139,13 @@ export default function App() {
   const peersRef = useRef<Map<string, RemoteActorState>>(new Map());
 
   const [profile, setProfile] = useState<PlayerCloudProfile>(loadInitialProfile);
-  const [authToken, setAuthToken] = useState<string | null>(() =>
-    localStorage.getItem(STORAGE_TOKEN_KEY)
-  );
+  const profileRef = useRef<PlayerCloudProfile>(profile);
+  profileRef.current = profile;
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [cloudFatalError, setCloudFatalError] = useState<Error | null>(null);
   const [syncStatus, setSyncStatus] = useState<string>('Local Cache');
+  const [cloudFriends, setCloudFriends] = useState<FriendEntry[]>([]);
   const lastPlayedMapRef = useRef<MapId | undefined>(undefined);
   const [screenState, setScreenState] = useState<GameScreenState>('title');
   const [selectedMap, setSelectedMap] = useState<MapId>('hyperion_atrium');
@@ -172,74 +188,114 @@ export default function App() {
     }
   }, [profile]);
 
+  if (cloudFatalError) {
+    throw cloudFatalError;
+  }
+
+  // Firebase Auth state & live Firestore cloud profile/friends listeners
+  useEffect(() => {
+    let unsubProfile: (() => void) | null = null;
+    let unsubFriends: (() => void) | null = null;
+
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      if (unsubProfile) {
+        unsubProfile();
+        unsubProfile = null;
+      }
+      if (unsubFriends) {
+        unsubFriends();
+        unsubFriends = null;
+      }
+
+      setFirebaseUser(user);
+      setAuthReady(true);
+
+      if (!user) {
+        localStorage.removeItem(STORAGE_TOKEN_KEY);
+        setCloudFriends([]);
+        setSyncStatus('Local Save');
+        return;
+      }
+
+      const uid = user.uid;
+      setSyncStatus('Syncing...');
+
+      loadOrCreateUserCloudProfile(uid, profileRef.current, user.displayName)
+        .then((loaded) => {
+          const normalized = normalizeProfile(loaded);
+          setProfile(normalized);
+          setSyncStatus(t(normalized.settings.language, 'account.synced'));
+
+          const userDocRef = doc(db, 'users', uid);
+          unsubProfile = onSnapshot(
+            userDocRef,
+            (snapshot) => {
+              if (!snapshot.exists() || snapshot.metadata.hasPendingWrites) return;
+              const data = snapshot.data() as PlayerCloudProfile;
+              const nextNormalized = normalizeProfile(
+                sanitizeProfileForFirestore(uid, {
+                  ...createDefaultProfile(data.nickname || 'Vanguard01'),
+                  ...data,
+                  accountId: uid,
+                })
+              );
+              setProfile(nextNormalized);
+              setSyncStatus(t(nextNormalized.settings.language, 'account.synced'));
+            },
+            (error) => {
+              try {
+                handleFirestoreError(error, OperationType.GET, `users/${uid}`);
+              } catch (e) {
+                setCloudFatalError(e instanceof Error ? e : new Error(String(e)));
+              }
+            }
+          );
+
+          unsubFriends = subscribeUserFriends(uid, (nextFriends) => {
+            setCloudFriends(nextFriends);
+          });
+        })
+        .catch((err) => {
+          setSyncStatus('Sync Error');
+          setCloudFatalError(err instanceof Error ? err : new Error(String(err)));
+        });
+    });
+
+    return () => {
+      unsubAuth();
+      unsubProfile?.();
+      unsubFriends?.();
+    };
+  }, []);
+
   const syncCloudSave = useCallback(
-    async (nextProfile: PlayerCloudProfile, tokenOverride?: string | null) => {
-      const token = tokenOverride !== undefined ? tokenOverride : authToken;
-      if (!token) {
+    async (nextProfile: PlayerCloudProfile, refreshFromReturn = false) => {
+      await Promise.resolve();
+      const user = auth.currentUser;
+      if (!user) {
         setSyncStatus('Local Save');
         return;
       }
       try {
         setSyncStatus('Syncing...');
-        const res = await fetch('/api/cloud-save', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ profile: nextProfile }),
-        });
-        if (res.ok) {
-          const data = (await res.json()) as { profile: PlayerCloudProfile };
-          const normalized = normalizeProfile(data.profile);
+        const saved = await saveUserCloudProfile(user.uid, nextProfile);
+        const normalized = normalizeProfile(saved);
+        if (refreshFromReturn) {
           setProfile(normalized);
-          setSyncStatus(t(normalized.settings.language, 'account.synced'));
-        } else if (res.status === 401) {
-          setAuthToken(null);
-          localStorage.removeItem(STORAGE_TOKEN_KEY);
-          setSyncStatus('Sign in to sync');
-        } else {
-          setSyncStatus('Offline Fallback');
         }
-      } catch {
-        setSyncStatus('Offline Fallback');
+        setSyncStatus(t(normalized.settings.language, 'account.synced'));
+      } catch (err) {
+        setSyncStatus('Sync Error');
+        setCloudFatalError(err instanceof Error ? err : new Error(String(err)));
       }
     },
-    [authToken]
+    []
   );
 
-  // Pull cloud save on startup if token exists
-  useEffect(() => {
-    if (!authToken) return;
-    fetch('/api/cloud-save', {
-      headers: { Authorization: `Bearer ${authToken}` },
-    })
-      .then((r) => {
-        if (r.status === 401) {
-          setAuthToken(null);
-          localStorage.removeItem(STORAGE_TOKEN_KEY);
-          setSyncStatus('Sign in to sync');
-          return null;
-        }
-        return r.ok ? r.json() : null;
-      })
-      .then((data) => {
-        if (data?.profile) {
-          const normalized = normalizeProfile(data.profile);
-          setProfile(normalized);
-          setSyncStatus(t(normalized.settings.language, 'account.synced'));
-        }
-      })
-      .catch(() => {});
-  }, [authToken]);
-
   // Fetch initial social state
-  const refreshSocial = useCallback(async (tokenOverride?: string | null) => {
-    const token = tokenOverride !== undefined ? tokenOverride : authToken;
+  const refreshSocial = useCallback(async () => {
     try {
-      const res = await fetch('/api/social/state', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch('/api/social/state');
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.friends)) setFriends(data.friends);
@@ -249,7 +305,7 @@ export default function App() {
     } catch {
       // Ignore transient network errors
     }
-  }, [authToken]);
+  }, []);
 
   useEffect(() => {
     refreshSocial();
@@ -611,72 +667,81 @@ export default function App() {
     }
   };
 
-  // Account Handlers (No Captcha)
-  const handleLogin = async (nickname: string, password: string, platform: PlatformType) => {
+  // Account Handlers (Firebase Google Auth + Cloud Firestore)
+  const handleGoogleSignIn = async (): Promise<{ ok: boolean; error?: string }> => {
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nickname, password, platform }),
-      });
-      const data = await res.json();
-      if (!res.ok) return { ok: false, error: data.error };
-      setAuthToken(data.token);
-      localStorage.setItem(STORAGE_TOKEN_KEY, data.token);
-      const normalized = normalizeProfile(data.profile);
-      setProfile(normalized);
-      setSyncStatus(t(normalized.settings.language, 'account.synced'));
-      refreshSocial(data.token);
+      await signInWithPopup(auth, googleProvider);
       return { ok: true };
-    } catch {
-      return { ok: false, error: 'Network error' };
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code ?? '';
+      if (code === 'auth/popup-closed-by-user') {
+        return { ok: false, error: 'Sign-in popup was closed before completing.' };
+      }
+      if (code === 'auth/popup-blocked') {
+        return { ok: false, error: 'Popup blocked by browser. Allow popups for this site and try again.' };
+      }
+      if (code === 'auth/unauthorized-domain') {
+        return {
+          ok: false,
+          error: `Domain "${window.location.hostname}" is not yet authorized in Firebase Console → Authentication → Settings → Authorized domains.`,
+        };
+      }
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Google sign-in failed',
+      };
     }
   };
 
-  const handleRegister = async (nickname: string, password: string, platform: PlatformType) => {
-    try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nickname, password, platform }),
-      });
-      const data = await res.json();
-      if (!res.ok) return { ok: false, error: data.error };
-      setAuthToken(data.token);
-      localStorage.setItem(STORAGE_TOKEN_KEY, data.token);
-      const normalized = normalizeProfile(data.profile);
-      setProfile(normalized);
-      setSyncStatus(t(normalized.settings.language, 'account.synced'));
-      refreshSocial(data.token);
-      return { ok: true };
-    } catch {
-      return { ok: false, error: 'Network error' };
+  const handleUpdateIdentity = async (
+    nickname: string,
+    platform: PlatformType
+  ): Promise<{ ok: boolean; error?: string }> => {
+    const clean = sanitizeNickname(nickname, '');
+    if (clean.length < 3) {
+      return { ok: false, error: 'Nickname must be 3–20 alphanumeric characters.' };
     }
+    const updated: PlayerCloudProfile = {
+      ...profile,
+      nickname: clean,
+      platform,
+    };
+    setProfile(updated);
+    await syncCloudSave(updated);
+    return { ok: true };
   };
 
-  const handleLogout = () => {
-    setAuthToken(null);
+  const handleLogout = async () => {
+    await signOut(auth);
     localStorage.removeItem(STORAGE_TOKEN_KEY);
     setProfile(createDefaultProfile('Vanguard01'));
-    setSyncStatus('Local Cache');
+    setSyncStatus('Local Save');
   };
 
   const handleAddFriend = async (nickname: string) => {
+    const clean = sanitizeNickname(nickname, '');
+    if (clean.length < 3) {
+      return { ok: false, error: 'Nickname must be 3–20 alphanumeric characters.' };
+    }
     try {
+      if (auth.currentUser) {
+        await addUserCloudFriend(auth.currentUser.uid, clean, profile.platform);
+      }
       const res = await fetch('/api/social/friends/add', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-        },
-        body: JSON.stringify({ nickname }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nickname: clean }),
       });
       const data = await res.json();
-      if (!res.ok) return { ok: false, error: data.error };
-      if (Array.isArray(data.friends)) setFriends(data.friends);
+      if (res.ok && Array.isArray(data.friends)) {
+        setFriends(data.friends);
+      }
       return { ok: true };
-    } catch {
-      return { ok: false, error: 'Network error' };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Could not add friend',
+      };
     }
   };
 
@@ -684,10 +749,7 @@ export default function App() {
     try {
       await fetch('/api/social/invite', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fromNickname: profile.nickname,
           toNickname,
@@ -962,7 +1024,11 @@ export default function App() {
 
                 {activeTab === 'social' && (
                   <SocialPanel
-                    friends={friends}
+                    friends={Array.from(
+                      new Map(
+                        [...friends, ...cloudFriends].map((f) => [f.nickname.toLowerCase(), f])
+                      ).values()
+                    )}
                     invites={invites}
                     chatMessages={chatMessages}
                     lang={lang}
@@ -989,13 +1055,15 @@ export default function App() {
                 {activeTab === 'account' && (
                   <AccountPanel
                     profile={profile}
-                    authToken={authToken}
+                    isAuthenticated={Boolean(firebaseUser)}
+                    authReady={authReady}
+                    userEmail={firebaseUser?.email}
                     lang={lang}
                     syncStatus={syncStatus}
-                    onLogin={handleLogin}
-                    onRegister={handleRegister}
+                    onGoogleSignIn={handleGoogleSignIn}
+                    onUpdateIdentity={handleUpdateIdentity}
                     onLogout={handleLogout}
-                    onSyncNow={() => syncCloudSave(profile)}
+                    onSyncNow={() => void syncCloudSave(profile)}
                   />
                 )}
               </div>

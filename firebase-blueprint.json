@@ -1,0 +1,206 @@
+{
+  "entities": {
+    "PlayerStats": {
+      "title": "PlayerStats",
+      "description": "Cumulative combat statistics for a Prism Protocol player.",
+      "type": "object",
+      "properties": {
+        "matchesPlayed": { "type": "number", "description": "Total matches completed" },
+        "wins": { "type": "number", "description": "Total matches won" },
+        "tags": { "type": "number", "description": "Total opponent eliminations" },
+        "deaths": { "type": "number", "description": "Total times tagged" },
+        "shotsFired": { "type": "number", "description": "Total laser shots fired" },
+        "shotsHit": { "type": "number", "description": "Total laser shots landed" }
+      },
+      "required": ["matchesPlayed", "wins", "tags", "deaths", "shotsFired", "shotsHit"]
+    },
+    "PlayerSettings": {
+      "title": "PlayerSettings",
+      "description": "Persisted graphics, display, audio, and control preferences.",
+      "type": "object",
+      "properties": {
+        "graphicsQuality": { "type": "string", "enum": ["low", "medium", "high", "ultra"] },
+        "shadowQuality": { "type": "string", "enum": ["off", "low", "medium", "high", "ultra"] },
+        "renderDistance": { "type": "number" },
+        "vsync": { "type": "boolean" },
+        "showFps": { "type": "boolean" },
+        "fpsCap": { "type": "string", "enum": ["screen_locked", "60", "120", "165", "240", "unlimited"] },
+        "fov": { "type": "number" },
+        "mouseSensitivity": { "type": "number" },
+        "shadowsEnabled": { "type": "boolean" },
+        "particlesEnabled": { "type": "boolean" },
+        "audioEnabled": { "type": "boolean" },
+        "masterVolume": { "type": "number" },
+        "darkMode": { "type": "boolean" },
+        "language": { "type": "string", "enum": ["en", "es", "sk", "fr", "ja"] },
+        "crossPlatformEnabled": { "type": "boolean" }
+      },
+      "required": [
+        "graphicsQuality",
+        "shadowQuality",
+        "renderDistance",
+        "vsync",
+        "showFps",
+        "fpsCap",
+        "fov",
+        "mouseSensitivity",
+        "shadowsEnabled",
+        "particlesEnabled",
+        "audioEnabled",
+        "masterVolume",
+        "darkMode",
+        "language",
+        "crossPlatformEnabled"
+      ]
+    },
+    "PlayerKeybinds": {
+      "title": "PlayerKeybinds",
+      "description": "Custom keyboard bindings mapped to Web KeyboardEvent.code identifiers.",
+      "type": "object",
+      "properties": {
+        "moveForward": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
+        "moveBackward": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
+        "moveLeft": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
+        "moveRight": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
+        "jump": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
+        "dash": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
+        "reload": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
+        "chat": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
+        "pause": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
+        "slot1": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
+        "slot2": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
+        "slot3": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" },
+        "slot4": { "type": "string", "maxLength": 32, "pattern": "^[a-zA-Z0-9]+$" }
+      },
+      "required": [
+        "moveForward",
+        "moveBackward",
+        "moveLeft",
+        "moveRight",
+        "jump",
+        "dash",
+        "reload",
+        "chat",
+        "pause",
+        "slot1",
+        "slot2",
+        "slot3",
+        "slot4"
+      ]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Cloud-saved Prism Protocol player progression, inventory, Battle Pass, and settings.",
+      "type": "object",
+      "properties": {
+        "accountId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "nickname": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20,
+          "pattern": "^[a-zA-Z0-9_\\- ]+$"
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["PC", "Web", "Mobile", "Console"]
+        },
+        "credits": { "type": "number" },
+        "xp": { "type": "number" },
+        "battlePassXp": { "type": "number" },
+        "battlePassPremium": { "type": "boolean" },
+        "claimedFreeTiers": { "type": "array" },
+        "claimedPremiumTiers": { "type": "array" },
+        "unlockedWeaponSkins": { "type": "array" },
+        "unlockedAvatarSkins": { "type": "array" },
+        "equippedWeaponId": {
+          "type": "string",
+          "enum": ["pulse_carbine", "volt_scatter", "helios_rail", "arc_repeater"]
+        },
+        "equippedWeaponSkinId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "equippedAvatarSkinId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "tutorialCompleted": { "type": "boolean" },
+        "easterEggUnlocked": { "type": "boolean" },
+        "stats": { "$ref": "PlayerStats" },
+        "settings": { "$ref": "PlayerSettings" },
+        "keybinds": { "$ref": "PlayerKeybinds" },
+        "lastSyncedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "accountId",
+        "nickname",
+        "platform",
+        "credits",
+        "xp",
+        "battlePassXp",
+        "battlePassPremium",
+        "claimedFreeTiers",
+        "claimedPremiumTiers",
+        "unlockedWeaponSkins",
+        "unlockedAvatarSkins",
+        "equippedWeaponId",
+        "equippedWeaponSkinId",
+        "equippedAvatarSkinId",
+        "tutorialCompleted",
+        "easterEggUnlocked",
+        "stats",
+        "settings",
+        "keybinds",
+        "lastSyncedAt",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "FriendRecord": {
+      "title": "FriendRecord",
+      "description": "Cloud-persisted friend entry belonging to a player.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "nickname": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20,
+          "pattern": "^[a-zA-Z0-9_\\- ]+$"
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["PC", "Web", "Mobile", "Console"]
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "nickname", "platform", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private cloud save document for an authenticated player keyed by Firebase Auth UID."
+    },
+    "/users/{userId}/friends/{friendId}": {
+      "schema": { "$ref": "#/entities/FriendRecord" },
+      "description": "Player's saved friend list entries gated by ownership of the parent /users/{userId} document."
+    }
+  }
+}

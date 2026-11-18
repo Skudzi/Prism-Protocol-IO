@@ -1,0 +1,258 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isVerifiedOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isParentUserOwner(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId)) &&
+        get(/databases/$(database)/documents/users/$(userId)).data.accountId == request.auth.uid;
+    }
+
+    function isValidPlatform(p) {
+      return p is string && p in ['PC', 'Web', 'Mobile', 'Console'];
+    }
+
+    function isValidNickname(name) {
+      return name is string &&
+        name.size() >= 3 &&
+        name.size() <= 20 &&
+        name.matches('^[a-zA-Z0-9_\\- ]+$');
+    }
+
+    function isValidSkinId(id) {
+      return id is string &&
+        id.size() >= 1 &&
+        id.size() <= 64 &&
+        id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidKeyCode(code) {
+      return code is string &&
+        code.size() >= 1 &&
+        code.size() <= 32 &&
+        code.matches('^[a-zA-Z0-9]+$');
+    }
+
+    function isNonNegNumber(val, maxVal) {
+      return (val is int || val is float) && val >= 0 && val <= maxVal;
+    }
+
+    function isValidIntList(arr, maxLen) {
+      return arr is list &&
+        arr.size() <= maxLen &&
+        (arr.size() == 0 || arr[0] is int);
+    }
+
+    function isValidSkinList(arr, maxLen) {
+      return arr is list &&
+        arr.size() >= 1 &&
+        arr.size() <= maxLen &&
+        isValidSkinId(arr[0]);
+    }
+
+    function isValidStats(stats) {
+      return stats is map &&
+        stats.keys().hasAll(['matchesPlayed', 'wins', 'tags', 'deaths', 'shotsFired', 'shotsHit']) &&
+        stats.keys().hasOnly(['matchesPlayed', 'wins', 'tags', 'deaths', 'shotsFired', 'shotsHit']) &&
+        isNonNegNumber(stats.matchesPlayed, 10000000) &&
+        isNonNegNumber(stats.wins, 10000000) &&
+        isNonNegNumber(stats.tags, 100000000) &&
+        isNonNegNumber(stats.deaths, 100000000) &&
+        isNonNegNumber(stats.shotsFired, 1000000000) &&
+        isNonNegNumber(stats.shotsHit, 1000000000);
+    }
+
+    function isValidSettings(s) {
+      return s is map &&
+        s.keys().hasAll([
+          'graphicsQuality', 'shadowQuality', 'renderDistance', 'vsync', 'showFps',
+          'fpsCap', 'fov', 'mouseSensitivity', 'shadowsEnabled', 'particlesEnabled',
+          'audioEnabled', 'masterVolume', 'darkMode', 'language', 'crossPlatformEnabled'
+        ]) &&
+        s.keys().hasOnly([
+          'graphicsQuality', 'shadowQuality', 'renderDistance', 'vsync', 'showFps',
+          'fpsCap', 'fov', 'mouseSensitivity', 'shadowsEnabled', 'particlesEnabled',
+          'audioEnabled', 'masterVolume', 'darkMode', 'language', 'crossPlatformEnabled'
+        ]) &&
+        s.graphicsQuality is string && s.graphicsQuality in ['low', 'medium', 'high', 'ultra'] &&
+        s.shadowQuality is string && s.shadowQuality in ['off', 'low', 'medium', 'high', 'ultra'] &&
+        isNonNegNumber(s.renderDistance, 1000) &&
+        s.vsync is bool &&
+        s.showFps is bool &&
+        s.fpsCap is string && s.fpsCap in ['screen_locked', '60', '120', '165', '240', 'unlimited'] &&
+        isNonNegNumber(s.fov, 150) &&
+        isNonNegNumber(s.mouseSensitivity, 20) &&
+        s.shadowsEnabled is bool &&
+        s.particlesEnabled is bool &&
+        s.audioEnabled is bool &&
+        isNonNegNumber(s.masterVolume, 1) &&
+        s.darkMode is bool &&
+        s.language is string && s.language in ['en', 'es', 'sk', 'fr', 'ja'] &&
+        s.crossPlatformEnabled is bool;
+    }
+
+    function isValidKeybinds(k) {
+      return k is map &&
+        k.keys().hasAll([
+          'moveForward', 'moveBackward', 'moveLeft', 'moveRight', 'jump', 'dash',
+          'reload', 'chat', 'pause', 'slot1', 'slot2', 'slot3', 'slot4'
+        ]) &&
+        k.keys().hasOnly([
+          'moveForward', 'moveBackward', 'moveLeft', 'moveRight', 'jump', 'dash',
+          'reload', 'chat', 'pause', 'slot1', 'slot2', 'slot3', 'slot4'
+        ]) &&
+        isValidKeyCode(k.moveForward) &&
+        isValidKeyCode(k.moveBackward) &&
+        isValidKeyCode(k.moveLeft) &&
+        isValidKeyCode(k.moveRight) &&
+        isValidKeyCode(k.jump) &&
+        isValidKeyCode(k.dash) &&
+        isValidKeyCode(k.reload) &&
+        isValidKeyCode(k.chat) &&
+        isValidKeyCode(k.pause) &&
+        isValidKeyCode(k.slot1) &&
+        isValidKeyCode(k.slot2) &&
+        isValidKeyCode(k.slot3) &&
+        isValidKeyCode(k.slot4);
+    }
+
+    function isValidUserProfile(data) {
+      return data is map &&
+        data.keys().hasAll([
+          'accountId', 'nickname', 'platform', 'credits', 'xp', 'battlePassXp',
+          'battlePassPremium', 'claimedFreeTiers', 'claimedPremiumTiers',
+          'unlockedWeaponSkins', 'unlockedAvatarSkins', 'equippedWeaponId',
+          'equippedWeaponSkinId', 'equippedAvatarSkinId', 'tutorialCompleted',
+          'easterEggUnlocked', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'accountId', 'nickname', 'platform', 'credits', 'xp', 'battlePassXp',
+          'battlePassPremium', 'claimedFreeTiers', 'claimedPremiumTiers',
+          'unlockedWeaponSkins', 'unlockedAvatarSkins', 'equippedWeaponId',
+          'equippedWeaponSkinId', 'equippedAvatarSkinId', 'tutorialCompleted',
+          'easterEggUnlocked', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.accountId) &&
+        data.accountId == request.auth.uid &&
+        isValidNickname(data.nickname) &&
+        isValidPlatform(data.platform) &&
+        isNonNegNumber(data.credits, 10000000) &&
+        isNonNegNumber(data.xp, 100000000) &&
+        isNonNegNumber(data.battlePassXp, 100000000) &&
+        data.battlePassPremium is bool &&
+        isValidIntList(data.claimedFreeTiers, 50) &&
+        isValidIntList(data.claimedPremiumTiers, 50) &&
+        isValidSkinList(data.unlockedWeaponSkins, 100) &&
+        isValidSkinList(data.unlockedAvatarSkins, 100) &&
+        data.equippedWeaponId is string &&
+        data.equippedWeaponId in ['pulse_carbine', 'volt_scatter', 'helios_rail', 'arc_repeater'] &&
+        isValidSkinId(data.equippedWeaponSkinId) &&
+        isValidSkinId(data.equippedAvatarSkinId) &&
+        data.tutorialCompleted is bool &&
+        data.easterEggUnlocked is bool &&
+        isValidStats(data.stats) &&
+        isValidSettings(data.settings) &&
+        isValidKeybinds(data.keybinds) &&
+        data.lastSyncedAt is string && data.lastSyncedAt.size() <= 64 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isProfileIdentitySyncAction() {
+      return incoming().diff(existing()).affectedKeys().hasOnly([
+        'nickname', 'platform', 'lastSyncedAt', 'updatedAt'
+      ]);
+    }
+
+    function isProfileProgressionSyncAction() {
+      return incoming().diff(existing()).affectedKeys().hasOnly([
+        'nickname', 'platform', 'credits', 'xp', 'battlePassXp',
+        'battlePassPremium', 'claimedFreeTiers', 'claimedPremiumTiers',
+        'unlockedWeaponSkins', 'unlockedAvatarSkins', 'equippedWeaponId',
+        'equippedWeaponSkinId', 'equippedAvatarSkinId', 'tutorialCompleted',
+        'easterEggUnlocked', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
+        'updatedAt'
+      ]);
+    }
+
+    function isValidFriendRecord(data, userId) {
+      return data is map &&
+        data.keys().hasAll(['ownerId', 'nickname', 'platform', 'createdAt']) &&
+        data.keys().hasOnly(['ownerId', 'nickname', 'platform', 'createdAt']) &&
+        isValidId(data.ownerId) &&
+        data.ownerId == request.auth.uid &&
+        data.ownerId == userId &&
+        isValidNickname(data.nickname) &&
+        isValidPlatform(data.platform) &&
+        data.createdAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isVerifiedOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId) &&
+        isVerifiedOwner(userId) &&
+        isValidUserProfile(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) &&
+        isVerifiedOwner(userId) &&
+        isValidUserProfile(incoming()) &&
+        incoming().accountId == existing().accountId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (isProfileIdentitySyncAction() || isProfileProgressionSyncAction());
+      allow delete: if false;
+
+      match /friends/{friendId} {
+        allow get: if isValidId(userId) &&
+          isValidId(friendId) &&
+          isVerifiedOwner(userId) &&
+          isParentUserOwner(userId);
+        allow list: if isVerifiedOwner(userId) &&
+          resource.data.ownerId == request.auth.uid;
+        allow create: if isValidId(userId) &&
+          isValidId(friendId) &&
+          isVerifiedOwner(userId) &&
+          isValidFriendRecord(incoming(), userId) &&
+          incoming().createdAt == request.time &&
+          isParentUserOwner(userId);
+        allow update: if false;
+        allow delete: if isValidId(userId) &&
+          isValidId(friendId) &&
+          isVerifiedOwner(userId) &&
+          isParentUserOwner(userId);
+      }
+    }
+  }
+}

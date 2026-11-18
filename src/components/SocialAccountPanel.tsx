@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Cloud, RefreshCw, Send, UserPlus, Users, Mail } from 'lucide-react';
 import {
   ChatMessage,
@@ -216,45 +216,62 @@ export const SocialPanel: React.FC<SocialPanelProps> = ({
 
 interface AccountPanelProps {
   profile: PlayerCloudProfile;
-  authToken: string | null;
+  isAuthenticated: boolean;
+  authReady: boolean;
+  userEmail?: string | null;
   lang: LanguageCode;
   syncStatus: string;
-  onLogin: (nickname: string, password: string, platform: PlatformType) => Promise<{ ok: boolean; error?: string }>;
-  onRegister: (nickname: string, password: string, platform: PlatformType) => Promise<{ ok: boolean; error?: string }>;
-  onLogout: () => void;
+  onGoogleSignIn: () => Promise<{ ok: boolean; error?: string }>;
+  onUpdateIdentity: (nickname: string, platform: PlatformType) => Promise<{ ok: boolean; error?: string }>;
+  onLogout: () => Promise<void>;
   onSyncNow: () => void;
 }
 
 export const AccountPanel: React.FC<AccountPanelProps> = ({
   profile,
-  authToken,
+  isAuthenticated,
+  authReady,
+  userEmail,
   lang,
   syncStatus,
-  onLogin,
-  onRegister,
+  onGoogleSignIn,
+  onUpdateIdentity,
   onLogout,
   onSyncNow,
 }) => {
-  const [mode, setMode] = useState<'login' | 'register'>('register');
-  const [nickname, setNickname] = useState('');
-  const [password, setPassword] = useState('');
+  const [nickname, setNickname] = useState(profile.nickname);
   const [platform, setPlatform] = useState<PlatformType>(profile.platform);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    setNickname(profile.nickname);
+    setPlatform(profile.platform);
+  }, [profile.nickname, profile.platform]);
+
+  const handleGoogleLogin = async () => {
     setErrorMsg(null);
+    setStatusMsg(null);
     setBusy(true);
-    const res =
-      mode === 'register'
-        ? await onRegister(nickname.trim(), password, platform)
-        : await onLogin(nickname.trim(), password, platform);
+    const res = await onGoogleSignIn();
     setBusy(false);
     if (!res.ok) {
-      setErrorMsg(res.error ?? 'Authentication failed');
+      setErrorMsg(res.error ?? 'Google sign-in failed');
+    }
+  };
+
+  const handleSaveIdentity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setStatusMsg(null);
+    setBusy(true);
+    const res = await onUpdateIdentity(nickname.trim(), platform);
+    setBusy(false);
+    if (!res.ok) {
+      setErrorMsg(res.error ?? 'Could not save profile');
     } else {
-      setPassword('');
+      setStatusMsg(t(lang, 'account.synced'));
     }
   };
 
@@ -277,13 +294,19 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
             <span className="text-slate-500 dark:text-slate-400">{t(lang, 'account.platform')}: </span>
             <span className="font-semibold">{profile.platform}</span>
           </div>
+          {isAuthenticated && userEmail && (
+            <div>
+              <span className="text-slate-500 dark:text-slate-400">Account: </span>
+              <span className="font-mono text-xs text-slate-800 dark:text-slate-200">{userEmail}</span>
+            </div>
+          )}
           <div>
             <span className="text-slate-500 dark:text-slate-400">K/D · Matches: </span>
             <span className="font-mono">
               {profile.stats.tags}/{profile.stats.deaths} · {profile.stats.matchesPlayed}
             </span>
           </div>
-          <div className="text-xs text-cyan-600 dark:text-cyan-400">
+          <div className="text-xs text-cyan-600 dark:text-cyan-400" data-testid="cloud-sync-status">
             {syncStatus} · {new Date(profile.lastSyncedAt).toLocaleTimeString()}
           </div>
         </div>
@@ -291,16 +314,19 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
         <div className="mt-5 flex flex-wrap gap-2">
           <button
             type="button"
+            data-testid="sync-now-btn"
             onClick={onSyncNow}
-            className="flex items-center gap-1.5 rounded-lg bg-cyan-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-400 cursor-pointer"
+            disabled={!isAuthenticated || busy}
+            className="flex items-center gap-1.5 rounded-lg bg-cyan-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50 cursor-pointer"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             {t(lang, 'cta.syncNow')}
           </button>
-          {authToken && (
+          {isAuthenticated && (
             <button
               type="button"
-              onClick={onLogout}
+              data-testid="logout-btn"
+              onClick={() => void onLogout()}
               className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer"
             >
               {t(lang, 'account.logout')}
@@ -309,124 +335,102 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
         </div>
       </div>
 
-      {!authToken ? (
+      {!isAuthenticated ? (
+        <div className="flex flex-col justify-between rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 p-5 space-y-4">
+          <div>
+            <div className="text-sm font-bold text-slate-900 dark:text-white">
+              {t(lang, 'account.title')}
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+              {t(lang, 'account.guest')}
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+              Sign in with your Google account to permanently save your Credits, Skins, Battle Pass tiers, Vault Easter Egg unlock, Stats, and Settings in Cloud Firestore across devices and updates.
+            </p>
+          </div>
+
+          {errorMsg && (
+            <p className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-500">
+              {errorMsg}
+            </p>
+          )}
+
+          <button
+            type="button"
+            data-testid="google-signin-btn"
+            disabled={!authReady || busy}
+            onClick={() => void handleGoogleLogin()}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50 cursor-pointer"
+          >
+            <Cloud className="h-4 w-4" />
+            {busy ? 'Connecting...' : t(lang, 'account.googleSignIn')}
+          </button>
+        </div>
+      ) : (
         <form
-          onSubmit={handleSubmit}
-          className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 p-5 space-y-4"
+          onSubmit={handleSaveIdentity}
+          className="flex flex-col justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-5 space-y-4"
         >
-          <div role="tablist" aria-label="Account mode" className="flex gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'register'}
-              onClick={() => {
-                setMode('register');
-                setErrorMsg(null);
-              }}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold cursor-pointer ${
-                mode === 'register'
-                  ? 'bg-cyan-500 text-slate-950'
-                  : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              New Account
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'login'}
-              onClick={() => {
-                setMode('login');
-                setErrorMsg(null);
-              }}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold cursor-pointer ${
-                mode === 'login'
-                  ? 'bg-cyan-500 text-slate-950'
-                  : 'text-slate-600 dark:text-slate-400'
-              }`}
-            >
-              Existing Account
-            </button>
-          </div>
+          <div className="space-y-3">
+            <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+              {t(lang, 'account.synced')}
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              All credits, weapon & avatar skins, Battle Pass tiers, keybinds, and Vault Easter Egg progress are saved in Cloud Firestore.
+            </p>
 
-          <div>
-            <label
-              htmlFor="acc-nick"
-              className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
-            >
-              {t(lang, 'account.nickname')}
-            </label>
-            <input
-              id="acc-nick"
-              type="text"
-              required
-              minLength={3}
-              maxLength={20}
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
-              placeholder="e.g. Striker99"
-              className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
-            />
-          </div>
+            <div>
+              <label
+                htmlFor="acc-nick"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
+              >
+                {t(lang, 'account.nickname')}
+              </label>
+              <input
+                id="acc-nick"
+                type="text"
+                required
+                minLength={3}
+                maxLength={20}
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                placeholder="e.g. Skudzi"
+                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+              />
+            </div>
 
-          <div>
-            <label
-              htmlFor="acc-pass"
-              className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
-            >
-              {t(lang, 'account.password')}
-            </label>
-            <input
-              id="acc-pass"
-              type="password"
-              required
-              minLength={4}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••"
-              className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
-            />
-          </div>
+            <div>
+              <label
+                htmlFor="acc-platform"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
+              >
+                {t(lang, 'account.platform')}
+              </label>
+              <select
+                id="acc-platform"
+                value={platform}
+                onChange={(e) => setPlatform(e.target.value as PlatformType)}
+                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+              >
+                <option value="Web">Web</option>
+                <option value="PC">PC</option>
+                <option value="Console">Console</option>
+                <option value="Mobile">Mobile</option>
+              </select>
+            </div>
 
-          <div>
-            <label
-              htmlFor="acc-platform"
-              className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
-            >
-              {t(lang, 'account.platform')}
-            </label>
-            <select
-              id="acc-platform"
-              value={platform}
-              onChange={(e) => setPlatform(e.target.value as PlatformType)}
-              className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
-            >
-              <option value="Web">Web</option>
-              <option value="PC">PC</option>
-              <option value="Console">Console</option>
-              <option value="Mobile">Mobile</option>
-            </select>
+            {errorMsg && <p className="text-xs font-medium text-rose-500">{errorMsg}</p>}
+            {statusMsg && <p className="text-xs font-medium text-emerald-500">{statusMsg}</p>}
           </div>
-
-          {errorMsg && <p className="text-xs font-medium text-rose-500">{errorMsg}</p>}
 
           <button
             type="submit"
             disabled={busy}
-            className="w-full rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50 cursor-pointer"
+            className="w-full rounded-lg bg-cyan-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50 cursor-pointer"
           >
-            {mode === 'register' ? t(lang, 'account.register') : t(lang, 'account.login')}
+            {t(lang, 'account.saveIdentity')}
           </button>
         </form>
-      ) : (
-        <div className="flex flex-col justify-center rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-5">
-          <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-            {t(lang, 'account.synced')}
-          </div>
-          <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-            All credits, weapon & avatar skins, Battle Pass tiers, keybinds, and Vault Easter Egg progress are synchronized across PC, Web, Console, and Mobile.
-          </p>
-        </div>
       )}
     </div>
   );
