@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Lock, Sun } from 'lucide-react';
+import { Check, Lock, Shuffle, Sun } from 'lucide-react';
 import { BATTLE_PASS_TIERS, MAP_LIST } from '../game/catalog';
 import { getBattlePassTier } from '../game/rules';
 import { LanguageCode, MapId, PlayerCloudProfile } from '../game/types';
@@ -7,74 +7,102 @@ import { t } from '../i18n/translations';
 
 interface MapsPanelProps {
   selectedMap: MapId;
+  manualMapSelected: boolean;
   lang: LanguageCode;
   onSelectMap: (id: MapId) => void;
   onDeploy: (id: MapId) => void;
+  onEnableRandomMap: () => void;
 }
 
 export const MapsPanel: React.FC<MapsPanelProps> = ({
   selectedMap,
+  manualMapSelected,
   lang,
   onSelectMap,
   onDeploy,
+  onEnableRandomMap,
 }) => {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {MAP_LIST.map((m) => {
-        const active = selectedMap === m.id;
-        return (
-          <div
-            key={m.id}
-            className={`flex flex-col justify-between rounded-lg border p-4 transition-colors ${
-              active
-                ? 'border-cyan-500 bg-cyan-500/10'
-                : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70'
-            }`}
-          >
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="font-bold text-slate-900 dark:text-white">
-                  {t(lang, m.nameKey as Parameters<typeof t>[1])}
-                </h4>
-                <span
-                  className="h-3 w-3 rounded-sm"
-                  style={{ backgroundColor: m.accentColor }}
-                  aria-hidden="true"
-                />
-              </div>
-              <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                {t(lang, m.subtitleKey as Parameters<typeof t>[1])}
-              </p>
-              {m.isDaylight && (
-                <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-300">
-                  <Sun className="h-3.5 w-3.5" />
-                  <span>Daylight</span>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 px-4 py-2.5">
+        <div className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
+          <Shuffle className={`h-4 w-4 shrink-0 ${!manualMapSelected ? 'text-cyan-500' : 'text-slate-400'}`} />
+          <span>
+            {!manualMapSelected ? t(lang, 'map.randomActive') : t(lang, 'map.randomMode')}
+          </span>
+        </div>
+        <button
+          type="button"
+          data-testid="random-map-toggle"
+          onClick={onEnableRandomMap}
+          disabled={!manualMapSelected}
+          className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+            !manualMapSelected
+              ? 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 cursor-default'
+              : 'bg-cyan-500 text-slate-950 hover:bg-cyan-400 cursor-pointer'
+          }`}
+        >
+          {!manualMapSelected ? t(lang, 'cta.equipped') : t(lang, 'map.useRandom')}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {MAP_LIST.map((m) => {
+          const active = manualMapSelected && selectedMap === m.id;
+          return (
+            <div
+              key={m.id}
+              className={`flex flex-col justify-between rounded-lg border p-4 transition-colors ${
+                active
+                  ? 'border-cyan-500 bg-cyan-500/10'
+                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70'
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="font-bold text-slate-900 dark:text-white">
+                    {t(lang, m.nameKey as Parameters<typeof t>[1])}
+                  </h4>
+                  <span
+                    className="h-3 w-3 rounded-sm"
+                    style={{ backgroundColor: m.accentColor }}
+                    aria-hidden="true"
+                  />
                 </div>
-              )}
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                  {t(lang, m.subtitleKey as Parameters<typeof t>[1])}
+                </p>
+                {m.isDaylight && (
+                  <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-300">
+                    <Sun className="h-3.5 w-3.5" />
+                    <span>Daylight</span>
+                  </div>
+                )}
+              </div>
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => onSelectMap(m.id)}
+                  className={`flex-1 rounded px-3 py-1.5 text-xs font-semibold cursor-pointer ${
+                    active
+                      ? 'bg-cyan-500 text-slate-950'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {active ? t(lang, 'cta.equipped') : 'Preview'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDeploy(m.id)}
+                  className="rounded bg-slate-900 dark:bg-white px-3 py-1.5 text-xs font-semibold text-white dark:text-slate-950 hover:opacity-90 cursor-pointer"
+                >
+                  {t(lang, 'nav.play')}
+                </button>
+              </div>
             </div>
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={() => onSelectMap(m.id)}
-                className={`flex-1 rounded px-3 py-1.5 text-xs font-semibold cursor-pointer ${
-                  active
-                    ? 'bg-cyan-500 text-slate-950'
-                    : 'bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700'
-                }`}
-              >
-                {active ? t(lang, 'cta.equipped') : 'Preview'}
-              </button>
-              <button
-                type="button"
-                onClick={() => onDeploy(m.id)}
-                className="rounded bg-slate-900 dark:bg-white px-3 py-1.5 text-xs font-semibold text-white dark:text-slate-950 hover:opacity-90 cursor-pointer"
-              >
-                {t(lang, 'nav.play')}
-              </button>
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 };

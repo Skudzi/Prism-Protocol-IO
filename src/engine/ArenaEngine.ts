@@ -2,9 +2,11 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { AVATAR_SKINS, MAPS, WEAPONS, WEAPON_LIST, WEAPON_SKINS } from '../game/catalog';
 import {
+  applyUnderfootJumpVelocity,
   calculateDamage,
   canManualReload,
   canTriggerEasterEgg,
+  canTriggerUnderfootJump,
   castLaserRay,
   checkHealOrbPickup,
   getHealOrbScheduleTimes,
@@ -12,6 +14,7 @@ import {
   RayTarget,
   resolvePlayerMovement,
   shouldAutoReload,
+  sortLeaderboardEntries,
 } from '../game/rules';
 import {
   GameMode,
@@ -20,6 +23,7 @@ import {
   HealOrbState,
   Keybinds,
   MapId,
+  MatchLeaderboardEntry,
   MatchSummary,
   MinimapSnapshot,
   RemoteActorState,
@@ -41,6 +45,7 @@ import {
   buildTexturedCrate,
   buildTreeModel,
   buildWeaponViewModel,
+  disposeAvatarRig,
 } from './models';
 import {
   createArenaFloorTextures,
@@ -108,6 +113,8 @@ interface BotEntity {
   rig: AnimatedAvatarRig;
   walkPhase: number;
   hitFlashTimer: number;
+  kills: number;
+  deaths: number;
 }
 
 interface LaserBeamPoolItem {
@@ -210,12 +217,16 @@ export class ArenaEngine {
   private sparks: SparkPoolItem[] = [];
 
   private bots: BotEntity[] = [];
-  private peerMeshes = new Map<string, { rig: AnimatedAvatarRig; walkPhase: number; data: RemoteActorState }>();
+  private peerMeshes = new Map<
+    string,
+    { rig: AnimatedAvatarRig; walkPhase: number; data: RemoteActorState; relation: 'ally' | 'enemy' }
+  >();
 
   private mapId: MapId = 'hyperion_atrium';
   private weaponId: WeaponId = 'pulse_carbine';
   private weaponSkinId = 'cobalt_standard';
   private avatarSkinId = 'vanguard_navy';
+  private playerNickname = 'Vanguard01';
   private settings: GameSettings;
   private keybinds: Keybinds;
 
@@ -268,6 +279,7 @@ export class ArenaEngine {
   private healFlashMs = 0;
   private easterEggTriggered = false;
   private lastFireMs = 0;
+  private underfootJumpCooldownMs = 0;
   private hitstopTimer = 0;
   private cameraTrauma = 0;
   private recoilOffset = 0;
@@ -313,6 +325,7 @@ export class ArenaEngine {
     this.renderer = new THREE.WebGLRenderer({
       antialias: !this.isSoftwareGl,
       powerPreference: 'high-performance',
+      stencil: true,
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -334,7 +347,7 @@ export class ArenaEngine {
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    const farPlane = Math.max(120, (settings.renderDistance || 180) + 120);
+    const farPlane = Math.max(580, (settings.renderDistance || 180) + 400);
     this.camera = new THREE.PerspectiveCamera(settings.fov, w / h, 0.1, farPlane);
     this.camera.rotation.order = 'YXZ';
     this.scene.add(this.camera);
@@ -599,7 +612,7 @@ export class ArenaEngine {
     this.settings = settings;
     this.keybinds = keybinds;
     this.camera.fov = settings.fov;
-    this.camera.far = Math.max(120, (settings.renderDistance || 180) + 120);
+    this.camera.far = Math.max(580, (settings.renderDistance || 180) + 400);
     this.camera.updateProjectionMatrix();
 
     const map = MAPS[this.mapId];
@@ -673,7 +686,21 @@ export class ArenaEngine {
     }
   }
 
-  public startMatch(mapId: MapId, isTutorial = false, gameMode: GameMode = 'ffa') {
+  public setPlayerNickname(nickname: string) {
+    if (nickname.trim()) {
+      this.playerNickname = nickname.trim();
+    }
+  }
+
+  public startMatch(
+    mapId: MapId,
+    isTutorial = false,
+    gameMode: GameMode = 'ffa',
+    playerNickname?: string
+  ) {
+    if (playerNickname?.trim()) {
+      this.playerNickname = playerNickname.trim();
+    }
     this.isTutorial = isTutorial;
     this.gameMode = isTutorial ? 'ffa' : gameMode;
     this.tutorialStep = 1;
@@ -719,6 +746,7 @@ export class ArenaEngine {
     this.teamScoreAmber = 0;
     this.shotsFired = 0;
     this.shotsHit = 0;
+    this.underfootJumpCooldownMs = 0;
     this.matchDuration = isTutorial ? 180 : 120;
     this.matchTimeRemaining = this.matchDuration;
     this.elapsedMatchSec = 0;
@@ -764,9 +792,10 @@ export class ArenaEngine {
     this.scene.fog = new THREE.FogExp2(map.fogColor, map.fogDensity * fogScale);
     this.renderer.toneMappingExposure = map.isDaylight ? 1.02 : 1.12;
 
-    // Gradient Sky Dome for realistic atmospheric depth
+    // Gradient Sky Dome for realistic atmospheric depth (always inside camera.far)
+    const skyRadius = Math.max(320, map.arenaHalfSize * 4.0);
     const skyDome = new THREE.Mesh(
-      new THREE.SphereGeometry(280, 24, 16),
+      new THREE.SphereGeometry(skyRadius, 32, 20),
       createSkyDomeMaterial(map.skyTopColor, map.skyHorizonColor)
     );
     this.mapGroup.add(skyDome);
@@ -782,15 +811,15 @@ export class ArenaEngine {
     const shadowSize = Math.max(512, this.getShadowMapSize(this.settings.shadowQuality ?? 'high'));
     this.currentShadowSize = shadowSize;
     const keyLight = new THREE.DirectionalLight(map.keyLightColor, map.isDaylight ? 1.18 : 1.45);
-    keyLight.position.set(24, 36, 20);
+    keyLight.position.set(42, 62, 36);
     keyLight.castShadow = !this.isSoftwareGl && this.settings.shadowsEnabled && this.settings.shadowQuality !== 'off';
-    const d = map.arenaHalfSize + 6;
+    const d = map.arenaHalfSize + 8;
     keyLight.shadow.camera.left = -d;
     keyLight.shadow.camera.right = d;
     keyLight.shadow.camera.top = d;
     keyLight.shadow.camera.bottom = -d;
     keyLight.shadow.camera.near = 1;
-    keyLight.shadow.camera.far = 110;
+    keyLight.shadow.camera.far = Math.max(170, map.arenaHalfSize * 2.6);
     keyLight.shadow.mapSize.set(shadowSize, shadowSize);
     keyLight.shadow.bias = -0.0005;
     keyLight.shadow.normalBias = 0.02;
@@ -800,10 +829,10 @@ export class ArenaEngine {
     const accentPoint = new THREE.PointLight(
       map.accentColor,
       map.isDaylight ? 6 : 16,
-      48,
-      1.5
+      72,
+      1.4
     );
-    accentPoint.position.set(0, 7.5, 0);
+    accentPoint.position.set(0, 9.5, 0);
     this.mapGroup.add(accentPoint);
 
     const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
@@ -826,7 +855,10 @@ export class ArenaEngine {
 
     if (map.isOutdoor) {
       // Extended outdoor ground disc + solid arena perimeter parapet wall + distant cliff vista
-      const terrain = new THREE.Mesh(new THREE.CircleGeometry(165, 48), floorMat);
+      const terrain = new THREE.Mesh(
+        new THREE.CircleGeometry(skyRadius, 48),
+        floorMat
+      );
       terrain.rotation.x = -Math.PI / 2;
       terrain.receiveShadow = true;
       this.mapGroup.add(terrain);
@@ -987,15 +1019,17 @@ export class ArenaEngine {
 
     // Build Street Lights along roads/corridors
     if (map.hasStreetLights) {
+      const sNear = 20;
+      const sFar = Math.round(map.arenaHalfSize * 0.68);
       const lampSpots: Array<{ x: number; z: number; rotY: number }> = [
-        { x: -4.4, z: -15, rotY: Math.PI / 2 },
-        { x: 4.4, z: -25, rotY: -Math.PI / 2 },
-        { x: -4.4, z: 25, rotY: Math.PI / 2 },
-        { x: 4.4, z: 15, rotY: -Math.PI / 2 },
-        { x: -16, z: -4.4, rotY: 0 },
-        { x: 16, z: 4.4, rotY: Math.PI },
-        { x: -25, z: 4.4, rotY: Math.PI },
-        { x: 25, z: -4.4, rotY: 0 },
+        { x: -4.4, z: -sNear, rotY: Math.PI / 2 },
+        { x: 4.4, z: -sFar, rotY: -Math.PI / 2 },
+        { x: -4.4, z: sFar, rotY: Math.PI / 2 },
+        { x: 4.4, z: sNear, rotY: -Math.PI / 2 },
+        { x: -sNear, z: -4.4, rotY: 0 },
+        { x: sNear, z: 4.4, rotY: Math.PI },
+        { x: -sFar, z: 4.4, rotY: Math.PI },
+        { x: sFar, z: -4.4, rotY: 0 },
       ];
       lampSpots.forEach((spot, idx) => {
         if (Math.abs(spot.x) >= map.arenaHalfSize - 1.5 || Math.abs(spot.z) >= map.arenaHalfSize - 1.5) {
@@ -1008,7 +1042,7 @@ export class ArenaEngine {
 
         // Add subtle warm light pools on 2 opposing lamps to stay well under light budget
         if (idx === 0 || idx === 3) {
-          const poolLight = new THREE.PointLight(map.accentColor, 9, 20, 1.8);
+          const poolLight = new THREE.PointLight(map.accentColor, 9, 24, 1.7);
           poolLight.position.set(spot.x, 5.8, spot.z);
           this.mapGroup.add(poolLight);
         }
@@ -1017,22 +1051,25 @@ export class ArenaEngine {
 
     // Build Trees in open courtyard margins (clear of roads, spawns, and obstacles)
     if (map.hasTrees) {
+      const tMid = Math.round(map.arenaHalfSize * 0.52);
+      const tOut = Math.round(map.arenaHalfSize * 0.78);
       const treeCandidates = [
-        [-21, -21], [21, -21], [-21, 21], [21, 21],
-        [-28, -11], [28, 11], [-11, -28], [11, 28],
-        [-28, 15], [28, -15], [-16, 26], [16, -26],
-        [-7.5, -21], [7.5, 21], [-21, 7.5], [21, -7.5],
+        [-22, -22], [22, -22], [-22, 22], [22, 22],
+        [-tOut, -14], [tOut, 14], [-14, -tOut], [14, tOut],
+        [-tOut, tMid], [tOut, -tMid], [-tMid, tOut], [tMid, -tOut],
+        [-10, -tMid], [10, tMid], [-tMid, 10], [tMid, -10],
+        [-tOut, -tOut], [tOut, tOut], [-tOut, tOut], [tOut, -tOut],
       ];
       treeCandidates.forEach(([tx, tz], idx) => {
-        if (Math.abs(tx) > map.arenaHalfSize - 2 || Math.abs(tz) > map.arenaHalfSize - 2) return;
+        if (Math.abs(tx) > map.arenaHalfSize - 2.5 || Math.abs(tz) > map.arenaHalfSize - 2.5) return;
         const blockedByObs = map.obstacles.some(
           (o) => Math.abs(tx - o.x) < o.w * 0.5 + 2.4 && Math.abs(tz - o.z) < o.d * 0.5 + 2.4
         );
         const blockedBySpawn = map.spawns.some(
-          (s) => Math.hypot(tx - s.x, tz - s.z) < 3.5
+          (s) => Math.hypot(tx - s.x, tz - s.z) < 3.8
         );
         if (blockedByObs || blockedBySpawn) return;
-        const scale = 0.95 + (idx % 3) * 0.18;
+        const scale = 1.0 + (idx % 3) * 0.2;
         const tree = buildTreeModel(this.shadowTex, scale, idx);
         tree.position.set(tx, 0, tz);
         this.mapGroup.add(tree);
@@ -1113,6 +1150,9 @@ export class ArenaEngine {
   }
 
   private spawnBots(isTutorial: boolean) {
+    for (const oldBot of this.bots) {
+      disposeAvatarRig(oldBot.rig);
+    }
     while (this.botsGroup.children.length > 0) {
       this.botsGroup.remove(this.botsGroup.children[0]);
     }
@@ -1127,13 +1167,14 @@ export class ArenaEngine {
       ];
       dronePositions.forEach((p, idx) => {
         const skin = AVATAR_SKINS[idx % AVATAR_SKINS.length];
-        const rig = buildAvatarRig(skin, '#22d3ee', this.shadowTex);
+        const name = `Holo-Drone 0${idx + 1}`;
+        const rig = buildAvatarRig(skin, '#ef4444', this.shadowTex, 'enemy', name);
         rig.group.position.set(p.x, p.y, p.z);
         rig.group.rotation.y = 0;
         this.botsGroup.add(rig.group);
         this.bots.push({
           id: `drone-${idx}`,
-          nickname: `Holo-Drone 0${idx + 1}`,
+          nickname: name,
           team: 'amber',
           policy: 'drone',
           x: p.x,
@@ -1155,6 +1196,8 @@ export class ArenaEngine {
           rig,
           walkPhase: idx * 1.1,
           hitFlashTimer: 0,
+          kills: 0,
+          deaths: 0,
         });
       });
       return;
@@ -1185,8 +1228,10 @@ export class ArenaEngine {
     for (const cfg of botConfigs) {
       const sp = map.spawns[cfg.spawnIdx % map.spawns.length];
       const skin = AVATAR_SKINS[cfg.skinIdx % AVATAR_SKINS.length];
-      const teamGlow = cfg.team === 'cyan' ? '#38bdf8' : '#f59e0b';
-      const rig = buildAvatarRig(skin, teamGlow, this.shadowTex);
+      const relation: 'ally' | 'enemy' =
+        this.gameMode === 'tdm' && cfg.team === 'cyan' ? 'ally' : 'enemy';
+      const teamGlow = relation === 'ally' ? '#3b82f6' : '#ef4444';
+      const rig = buildAvatarRig(skin, teamGlow, this.shadowTex, relation, cfg.name);
       rig.group.position.set(sp.x, sp.y, sp.z);
       this.botsGroup.add(rig.group);
 
@@ -1214,6 +1259,8 @@ export class ArenaEngine {
         rig,
         walkPhase: Math.random() * 6,
         hitFlashTimer: 0,
+        kills: 0,
+        deaths: 0,
       });
     }
   }
@@ -1223,18 +1270,28 @@ export class ArenaEngine {
     for (const [id, entry] of this.peerMeshes.entries()) {
       if (!activeIds.has(id)) {
         this.peersGroup.remove(entry.rig.group);
+        disposeAvatarRig(entry.rig);
         this.peerMeshes.delete(id);
       }
     }
 
     for (const peer of peers) {
+      const relation: 'ally' | 'enemy' =
+        this.gameMode === 'tdm' && peer.team === 'cyan' ? 'ally' : 'enemy';
       let existing = this.peerMeshes.get(peer.id);
+      if (existing && existing.relation !== relation) {
+        this.peersGroup.remove(existing.rig.group);
+        disposeAvatarRig(existing.rig);
+        this.peerMeshes.delete(peer.id);
+        existing = undefined;
+      }
       if (!existing) {
         const skin =
           AVATAR_SKINS.find((a) => a.id === peer.avatarSkinId) ?? AVATAR_SKINS[0];
-        const rig = buildAvatarRig(skin, '#38bdf8', this.shadowTex);
+        const teamColor = relation === 'ally' ? '#3b82f6' : '#ef4444';
+        const rig = buildAvatarRig(skin, teamColor, this.shadowTex, relation, peer.nickname);
         this.peersGroup.add(rig.group);
-        existing = { rig, walkPhase: 0, data: peer };
+        existing = { rig, walkPhase: 0, data: peer, relation };
         this.peerMeshes.set(peer.id, existing);
       }
       const moved =
@@ -1399,9 +1456,9 @@ export class ArenaEngine {
         alive: b.alive,
       }));
 
-    // Include remote peers as ray targets
+    // Include opposing remote peers as ray targets
     for (const [id, entry] of this.peerMeshes.entries()) {
-      if (entry.data.alive) {
+      if (entry.data.alive && (this.gameMode !== 'tdm' || entry.data.team !== 'cyan')) {
         targets.push({
           id,
           x: entry.data.x,
@@ -1431,6 +1488,7 @@ export class ArenaEngine {
     muzzleOffset.applyQuaternion(this.camera.quaternion).add(this.camera.position);
     const muzzlePos = { x: muzzleOffset.x, y: muzzleOffset.y, z: muzzleOffset.z };
 
+    let underfootTriggered = false;
     for (let p = 0; p < weapon.pellets; p++) {
       this.shotsFired++;
       const dir = {
@@ -1447,6 +1505,18 @@ export class ArenaEngine {
       this.spawnProjectile(muzzlePos, hit.point, weapon.ammoStyle);
       this.spawnBeam(muzzlePos, hit.point, beamColor);
       this.spawnSparks(hit.point, hit.hitType === 'target' ? 14 : 6);
+
+      // Underfoot shot jump boost (+0.3x jump height) when firing downward near ground/cover
+      if (
+        !underfootTriggered &&
+        canTriggerUnderfootJump(dir.y, hit.distance, this.underfootJumpCooldownMs)
+      ) {
+        this.playerVel.y = applyUnderfootJumpVelocity(this.playerVel.y);
+        this.grounded = false;
+        this.underfootJumpCooldownMs = 450;
+        underfootTriggered = true;
+        soundEngine.playJumpPad();
+      }
 
       if (p === 0) {
         this.callbacks.onNetworkFire?.(
@@ -1480,6 +1550,7 @@ export class ArenaEngine {
           this.lastHitZone = hit.hitZone ?? 'body';
           if (bot.hp <= 0) {
             bot.alive = false;
+            bot.deaths++;
             bot.respawnTimer = this.isTutorial ? 999 : 3.2;
             bot.rig.group.visible = false;
             this.tags++;
@@ -1697,14 +1768,14 @@ export class ArenaEngine {
 
     // Title screen world camera tour
     if (this.screenState === 'title') {
-      this.tourAngle += dt * 0.2;
-      const r = 24;
+      this.tourAngle += dt * 0.16;
+      const r = Math.min(46, Math.max(24, MAPS[this.mapId].arenaHalfSize * 0.56));
       this.camera.position.set(
         Math.cos(this.tourAngle) * r,
-        8.2 + Math.sin(this.tourAngle * 0.7) * 1.4,
+        11.2 + Math.sin(this.tourAngle * 0.7) * 2.0,
         Math.sin(this.tourAngle) * r
       );
-      this.camera.lookAt(0, 2.2, 0);
+      this.camera.lookAt(0, 2.4, 0);
       return;
     }
 
@@ -1719,6 +1790,7 @@ export class ArenaEngine {
     this.hitMarkerMs = Math.max(0, this.hitMarkerMs - dt * 1000);
     this.damageFlashMs = Math.max(0, this.damageFlashMs - dt * 1000);
     this.healFlashMs = Math.max(0, this.healFlashMs - dt * 1000);
+    this.underfootJumpCooldownMs = Math.max(0, this.underfootJumpCooldownMs - dt * 1000);
 
     // Magazine reload countdown
     if (this.isReloading) {
@@ -2055,7 +2127,7 @@ export class ArenaEngine {
       }
 
       // Smooth horizontal inertia for natural human-like bot acceleration & deceleration
-      const botMaxSpeed = bot.hitFlashTimer > 0 ? 6.4 : 5.4;
+      const botMaxSpeed = bot.hitFlashTimer > 0 ? 6.9 : 5.9;
       const targetVx = (-sinY * moveF + cosY * moveR) * botMaxSpeed;
       const targetVz = (-cosY * moveF - sinY * moveR) * botMaxSpeed;
       const lenTarget = Math.hypot(targetVx, targetVz);
@@ -2092,7 +2164,7 @@ export class ArenaEngine {
       bot.grounded = res.grounded;
 
       const actualSpeed = Math.hypot(bot.x - prevBotX, bot.z - prevBotZ) / Math.max(0.001, dt);
-      const speedRatio = Math.min(1, actualSpeed / 5.4);
+      const speedRatio = Math.min(1, actualSpeed / 5.9);
 
       bot.rig.group.position.set(bot.x, bot.y, bot.z);
       bot.rig.group.rotation.y = bot.yaw + Math.PI;
@@ -2117,7 +2189,7 @@ export class ArenaEngine {
 
       // Bot laser fire with clear sight check
       bot.fireCooldown -= dt;
-      if (bot.fireCooldown <= 0 && dist < 26) {
+      if (bot.fireCooldown <= 0 && dist < 38) {
         bot.fireCooldown = 1.35 + Math.random() * 0.9;
         const origin = { x: bot.x, y: bot.y + 1.3, z: bot.z };
         const dir = {
@@ -2143,6 +2215,8 @@ export class ArenaEngine {
               targetBot.hitFlashTimer = 0.08;
               if (targetBot.hp <= 0) {
                 targetBot.alive = false;
+                targetBot.deaths++;
+                bot.kills++;
                 targetBot.respawnTimer = 3.2;
                 targetBot.rig.group.visible = false;
                 if (this.gameMode === 'tdm') {
@@ -2167,6 +2241,7 @@ export class ArenaEngine {
               this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.22);
               if (this.hp <= 0) {
                 this.deaths++;
+                bot.kills++;
                 if (this.gameMode === 'tdm') {
                   this.teamScoreAmber += 1;
                 }
@@ -2209,6 +2284,42 @@ export class ArenaEngine {
       (this.easterEggTriggered ? 500 : 0);
     const xpEarned = 180 + this.tags * 25 + (won ? 90 : 0);
 
+    let leaderboard: MatchLeaderboardEntry[] | undefined;
+    if (this.gameMode === 'tdm') {
+      const entries: MatchLeaderboardEntry[] = [
+        {
+          id: 'local-player',
+          nickname: this.playerNickname,
+          team: 'cyan',
+          isBot: false,
+          isLocalPlayer: true,
+          kills: this.tags,
+          deaths: this.deaths,
+        },
+        ...this.bots
+          .filter((b) => b.policy !== 'drone')
+          .map((b) => ({
+            id: b.id,
+            nickname: b.nickname,
+            team: b.team,
+            isBot: true,
+            isLocalPlayer: false,
+            kills: b.kills,
+            deaths: b.deaths,
+          })),
+        ...Array.from(this.peerMeshes.entries()).map(([id, p]) => ({
+          id,
+          nickname: p.data.nickname,
+          team: p.data.team,
+          isBot: p.data.isBot,
+          isLocalPlayer: false,
+          kills: p.data.kills ?? p.data.score ?? 0,
+          deaths: p.data.deaths ?? 0,
+        })),
+      ];
+      leaderboard = sortLeaderboardEntries(entries);
+    }
+
     this.callbacks.onMatchEnd(
       {
         won,
@@ -2223,6 +2334,7 @@ export class ArenaEngine {
         xpEarned,
         easterEggFound: this.easterEggTriggered,
         durationSec: this.matchDuration,
+        leaderboard,
       },
       this.shotsFired,
       this.shotsHit
@@ -2320,6 +2432,12 @@ export class ArenaEngine {
     window.removeEventListener('mouseup', this.onMouseUp);
     window.removeEventListener('wheel', this.onWheel);
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu);
+    for (const bot of this.bots) {
+      disposeAvatarRig(bot.rig);
+    }
+    for (const peer of this.peerMeshes.values()) {
+      disposeAvatarRig(peer.rig);
+    }
     Object.values(this.projectileGeos).forEach((g) => g.dispose());
     Object.values(this.projectileMats).forEach((m) => m.dispose());
     this.shadowTex.dispose();

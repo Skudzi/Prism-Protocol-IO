@@ -3,18 +3,24 @@ import assert from 'node:assert/strict';
 import { createDefaultProfile, DEFAULT_SETTINGS, MAPS, WEAPONS, WEAPON_SKINS } from './catalog';
 import {
   applyMatchRewards,
+  applyUnderfootJumpVelocity,
   calculateDamage,
   canManualReload,
   canTriggerEasterEgg,
+  canTriggerUnderfootJump,
   castLaserRay,
   checkHealOrbPickup,
   checkJumpPadCollision,
   claimBattlePassTier,
   getHealOrbScheduleTimes,
+  NORMAL_JUMP_VELOCITY,
   pickOpenHealOrbPosition,
+  pickRandomMapId,
   purchaseStoreItem,
   resolvePlayerMovement,
   shouldAutoReload,
+  sortLeaderboardEntries,
+  UNDERFOOT_JUMP_VELOCITY,
   upgradeBattlePassPremium,
 } from './rules';
 import {
@@ -176,7 +182,7 @@ test('Catalog includes Rainbow Spectrum, Golden Walnut skins, jump pads on all 8
 
   for (const map of Object.values(MAPS)) {
     assert.ok(map.jumpPads.length >= 3, `${map.id} should have jump pads`);
-    assert.ok(map.arenaHalfSize >= 34, `${map.id} should be spacious`);
+    assert.ok(map.arenaHalfSize >= 68, `${map.id} should be expanded (>= 68m half-size)`);
   }
 });
 
@@ -321,3 +327,49 @@ test('Multi-pass movement keeps player strictly inside arena borders and out of 
   assert.ok(edgeRes.pos.x >= -bound - 1e-6);
   assert.ok(edgeRes.pos.z >= -bound - 1e-6);
 });
+
+test('TDM leaderboard ranks players and bots by highest kills then fewest deaths', () => {
+  const sorted = sortLeaderboardEntries([
+    { id: 'bot-riftbot', nickname: 'RiftBot', team: 'amber', isBot: true, isLocalPlayer: false, kills: 5, deaths: 4 },
+    { id: 'local-player', nickname: 'Skudzi', team: 'cyan', isBot: false, isLocalPlayer: true, kills: 8, deaths: 3 },
+    { id: 'bot-astraally', nickname: 'AstraAlly', team: 'cyan', isBot: true, isLocalPlayer: false, kills: 5, deaths: 2 },
+    { id: 'bot-vexunit', nickname: 'VexUnit', team: 'amber', isBot: true, isLocalPlayer: false, kills: 8, deaths: 1 },
+  ]);
+  assert.deepEqual(
+    sorted.map((e) => `${e.nickname}:${e.kills}/${e.deaths}`),
+    ['VexUnit:8/1', 'Skudzi:8/3', 'AstraAlly:5/2', 'RiftBot:5/4']
+  );
+});
+
+test('pickRandomMapId selects valid maps and avoids immediate repeat when excluded', () => {
+  const allIds = Object.keys(MAPS);
+  for (let i = 0; i < 16; i += 1) {
+    const chosen = pickRandomMapId('hyperion_atrium', () => i / 16);
+    assert.ok(allIds.includes(chosen));
+    assert.notEqual(chosen, 'hyperion_atrium');
+  }
+});
+
+test('Underfoot shot triggers +0.3x jump height boost and floor ray hit', () => {
+  const map = MAPS.hyperion_atrium;
+  const downHit = castLaserRay(
+    { x: 10, y: 1.56, z: 10 },
+    { x: 0, y: -1, z: 0 },
+    80,
+    map,
+    []
+  );
+  assert.equal(downHit.hitType, 'obstacle');
+  assert.ok(Math.abs(downHit.distance - 1.56) < 1e-4);
+
+  assert.equal(canTriggerUnderfootJump(-0.95, downHit.distance, 0), true);
+  assert.equal(canTriggerUnderfootJump(-0.95, downHit.distance, 120), false);
+  assert.equal(canTriggerUnderfootJump(-0.2, downHit.distance, 0), false);
+  assert.equal(canTriggerUnderfootJump(-0.95, 6.0, 0), false);
+
+  const launchedVelY = applyUnderfootJumpVelocity(0);
+  assert.equal(launchedVelY, UNDERFOOT_JUMP_VELOCITY);
+  const heightRatio = Math.pow(launchedVelY, 2) / Math.pow(NORMAL_JUMP_VELOCITY, 2);
+  assert.ok(Math.abs(heightRatio - 1.3) < 1e-5, 'Underfoot jump reaches 1.3x normal jump height');
+});
+

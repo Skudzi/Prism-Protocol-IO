@@ -132,6 +132,15 @@ const en = {
   'match.accuracy': 'Accuracy',
   'match.creditsEarned': 'Credits Earned',
   'match.xpEarned': 'Battle Pass XP',
+  'match.leaderboard': 'TDM Leaderboard',
+  'match.player': 'Player',
+  'match.kills': 'Kills',
+  'match.deaths': 'Deaths',
+  'match.you': 'YOU',
+  'match.bot': 'BOT',
+  'map.randomMode': 'Random Map Every Round',
+  'map.randomActive': 'Random rotation active — picks a new arena each round unless you select a map below.',
+  'map.useRandom': 'Switch to Random Map',
 } as const;
 
 type TranslationKey = keyof typeof en;
@@ -260,6 +269,15 @@ const es: Record<TranslationKey, string> = {
   'match.accuracy': 'Precisión',
   'match.creditsEarned': 'Créditos Ganados',
   'match.xpEarned': 'XP del Pase',
+  'match.leaderboard': 'Tabla TDM',
+  'match.player': 'Jugador',
+  'match.kills': 'Bajas',
+  'match.deaths': 'Muertes',
+  'match.you': 'TÚ',
+  'match.bot': 'BOT',
+  'map.randomMode': 'Mapa Aleatorio en Cada Ronda',
+  'map.randomActive': 'Rotación aleatoria activa — elige un mapa diferente cada ronda si no seleccionas uno.',
+  'map.useRandom': 'Cambiar a Mapa Aleatorio',
 };
 
 const sk: Record<TranslationKey, string> = {
@@ -386,6 +404,15 @@ const sk: Record<TranslationKey, string> = {
   'match.accuracy': 'Presnosť',
   'match.creditsEarned': 'Získané Kredity',
   'match.xpEarned': 'Battle Pass XP',
+  'match.leaderboard': 'TDM Tabuľka',
+  'match.player': 'Hráč',
+  'match.kills': 'Zásahy',
+  'match.deaths': 'Smrti',
+  'match.you': 'TY',
+  'match.bot': 'BOT',
+  'map.randomMode': 'Náhodná Mapa Každé Kolo',
+  'map.randomActive': 'Aktívna náhodná rotácia — každé kolo vyberie inú arénu, pokiaľ si nevyberieš vlastnú.',
+  'map.useRandom': 'Prepnúť na Náhodnú Mapu',
 };
 
 const fr: Record<TranslationKey, string> = {
@@ -512,6 +539,15 @@ const fr: Record<TranslationKey, string> = {
   'match.accuracy': 'Précision',
   'match.creditsEarned': 'Crédits Gagnés',
   'match.xpEarned': 'XP Passe de Combat',
+  'match.leaderboard': 'Classement TDM',
+  'match.player': 'Joueur',
+  'match.kills': 'Éliminations',
+  'match.deaths': 'Morts',
+  'match.you': 'VOUS',
+  'match.bot': 'BOT',
+  'map.randomMode': 'Carte Aléatoire Chaque Manche',
+  'map.randomActive': 'Rotation aléatoire active — change de carte à chaque manche sauf choix ci-dessous.',
+  'map.useRandom': 'Passer en Carte Aléatoire',
 };
 
 const ja: Record<TranslationKey, string> = {
@@ -638,6 +674,15 @@ const ja: Record<TranslationKey, string> = {
   'match.accuracy': '命中率',
   'match.creditsEarned': '獲得クレジット',
   'match.xpEarned': 'バトルパスXP',
+  'match.leaderboard': 'TDM ランキング',
+  'match.player': 'プレイヤー',
+  'match.kills': 'キル',
+  'match.deaths': 'デス',
+  'match.you': 'あなた',
+  'match.bot': 'BOT',
+  'map.randomMode': '毎ラウンドランダムマップ',
+  'map.randomActive': 'マップ未選択時は毎ラウンド異なるアリーナが自動で選ばれます。',
+  'map.useRandom': 'ランダムマップに切替',
 };
 
 const DICTIONARIES: Record<LanguageCode, Record<TranslationKey, string>> = {

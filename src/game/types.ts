@@ -308,6 +308,18 @@ export interface RemoteActorState {
   avatarSkinId: string;
   alive: boolean;
   score: number;
+  kills?: number;
+  deaths?: number;
+}
+
+export interface MatchLeaderboardEntry {
+  id: string;
+  nickname: string;
+  team: 'cyan' | 'amber';
+  isBot: boolean;
+  isLocalPlayer: boolean;
+  kills: number;
+  deaths: number;
 }
 
 export interface MatchSummary {
@@ -323,4 +335,5 @@ export interface MatchSummary {
   xpEarned: number;
   easterEggFound: boolean;
   durationSec: number;
+  leaderboard?: MatchLeaderboardEntry[];
 }

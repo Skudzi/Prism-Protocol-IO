@@ -23,6 +23,7 @@ import { createDefaultProfile, DEFAULT_SETTINGS, MAPS } from './game/catalog';
 import {
   applyMatchRewards,
   claimBattlePassTier,
+  pickRandomMapId,
   purchaseStoreItem,
   upgradeBattlePassPremium,
 } from './game/rules';
@@ -129,8 +130,10 @@ export default function App() {
     localStorage.getItem(STORAGE_TOKEN_KEY)
   );
   const [syncStatus, setSyncStatus] = useState<string>('Local Cache');
+  const lastPlayedMapRef = useRef<MapId | undefined>(undefined);
   const [screenState, setScreenState] = useState<GameScreenState>('title');
   const [selectedMap, setSelectedMap] = useState<MapId>('hyperion_atrium');
+  const [manualMapSelected, setManualMapSelected] = useState(false);
   const [gameMode, setGameMode] = useState<GameMode>('ffa');
   const [roomCode, setRoomCode] = useState<string>('ALPHA-1');
   const [activeTab, setActiveTab] = useState<HubTab>(null);
@@ -515,6 +518,10 @@ export default function App() {
     );
   }, [profile.equippedWeaponId, profile.equippedWeaponSkinId, profile.equippedAvatarSkinId]);
 
+  useEffect(() => {
+    engineRef.current?.setPlayerNickname(profile.nickname);
+  }, [profile.nickname]);
+
   const startGameplay = useCallback(
     (
       mapId: MapId,
@@ -527,6 +534,9 @@ export default function App() {
       setMatchSummary(null);
       setMatchChatOpen(false);
       setIsTutorial(tutorialMode);
+      if (!tutorialMode) {
+        lastPlayedMapRef.current = mapId;
+      }
       setSelectedMap(mapId);
       setScreenState('playing');
       document.body.dataset.state = 'playing';
@@ -536,7 +546,7 @@ export default function App() {
         profile.equippedWeaponSkinId,
         profile.equippedAvatarSkinId
       );
-      engineRef.current?.startMatch(mapId, tutorialMode, modeOverride);
+      engineRef.current?.startMatch(mapId, tutorialMode, modeOverride, profile.nickname);
 
       if (!tutorialMode && wsRef.current?.readyState === WebSocket.OPEN) {
         const sp = MAPS[mapId].spawns[0];
@@ -556,16 +566,24 @@ export default function App() {
       profile.equippedWeaponId,
       profile.equippedWeaponSkinId,
       profile.equippedAvatarSkinId,
+      profile.nickname,
       roomCode,
       gameMode,
     ]
   );
 
+  const startNextRound = useCallback(() => {
+    const targetMap = manualMapSelected
+      ? selectedMap
+      : pickRandomMapId(lastPlayedMapRef.current);
+    startGameplay(targetMap, false);
+  }, [manualMapSelected, selectedMap, startGameplay]);
+
   // Support ?autostart=1 and Enter/Space on Title screen
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('autostart') === '1') {
-      startGameplay(selectedMap, false);
+      startNextRound();
     }
   }, []);
 
@@ -576,12 +594,12 @@ export default function App() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (e.code === 'Enter' || e.code === 'Space') {
         e.preventDefault();
-        startGameplay(selectedMap, false);
+        startNextRound();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [screenState, activeTab, selectedMap, startGameplay]);
+  }, [screenState, activeTab, startNextRound]);
 
   const handleReturnHub = () => {
     setScreenState('title');
@@ -810,7 +828,10 @@ export default function App() {
               </div>
 
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                {t(lang, MAPS[selectedMap].nameKey as Parameters<typeof t>[1])} ·{' '}
+                {manualMapSelected
+                  ? t(lang, MAPS[selectedMap].nameKey as Parameters<typeof t>[1])
+                  : t(lang, 'map.randomMode')}{' '}
+                ·{' '}
                 {t(lang, `weapon.${profile.equippedWeaponId}.name` as Parameters<typeof t>[1])}
               </p>
 
@@ -837,7 +858,7 @@ export default function App() {
                 <button
                   type="button"
                   data-start="true"
-                  onClick={() => startGameplay(selectedMap, false)}
+                  onClick={startNextRound}
                   className="flex items-center gap-2 rounded-lg bg-cyan-500 px-6 py-3 text-sm font-bold text-slate-950 hover:bg-cyan-400 transition-colors cursor-pointer"
                 >
                   <Play className="h-4 w-4 fill-current" />
@@ -899,12 +920,20 @@ export default function App() {
                 {activeTab === 'maps' && (
                   <MapsPanel
                     selectedMap={selectedMap}
+                    manualMapSelected={manualMapSelected}
                     lang={lang}
                     onSelectMap={(id) => {
+                      setManualMapSelected(true);
                       setSelectedMap(id);
                       engineRef.current?.setMapPreview(id);
                     }}
-                    onDeploy={(id) => startGameplay(id, false)}
+                    onDeploy={(id) => {
+                      setManualMapSelected(true);
+                      startGameplay(id, false);
+                    }}
+                    onEnableRandomMap={() => {
+                      setManualMapSelected(false);
+                    }}
                   />
                 )}
 
@@ -1041,7 +1070,13 @@ export default function App() {
           setScreenState('playing');
           engineRef.current?.setScreenState('playing');
         }}
-        onRestart={() => startGameplay(selectedMap, false)}
+        onRestart={() => {
+          if (screenState === 'gameover') {
+            startNextRound();
+          } else {
+            startGameplay(selectedMap, false);
+          }
+        }}
         onReturnHub={handleReturnHub}
         onSkipTutorial={() => {
           setProfile((prev) => {

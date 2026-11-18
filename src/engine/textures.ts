@@ -524,6 +524,8 @@ export function createSkyDomeMaterial(
         float h = normalize(vWorldPosition).y;
         float t = pow(max(h, 0.0), 0.55);
         gl_FragColor = vec4(mix(horizonColor, topColor, t), 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });

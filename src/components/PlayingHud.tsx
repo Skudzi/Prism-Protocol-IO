@@ -110,7 +110,7 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
   if (screenState === 'gameover' && matchSummary) {
     return (
       <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/75 p-4">
-        <div className="w-full max-w-lg rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-[#0D131F] p-6 shadow-2xl">
+        <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-[#0D131F] p-6 shadow-2xl">
           <p className="text-xs font-semibold tracking-wider text-cyan-600 dark:text-cyan-400">
             {t(lang, MAPS[matchSummary.mapId].nameKey as Parameters<typeof t>[1])}
           </p>
@@ -144,6 +144,78 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
               </div>
             </div>
           </div>
+
+          {matchSummary.gameMode === 'tdm' &&
+            matchSummary.leaderboard &&
+            matchSummary.leaderboard.length > 0 && (
+              <div
+                data-testid="tdm-leaderboard"
+                className="mt-4 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70"
+              >
+                <div className="border-b border-slate-200 dark:border-slate-800 px-3.5 py-2 text-xs font-bold tracking-wide text-slate-700 dark:text-slate-200">
+                  {t(lang, 'match.leaderboard')}
+                </div>
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-slate-200 dark:border-slate-800/80 text-[11px] text-slate-500 dark:text-slate-400">
+                    <tr>
+                      <th className="px-3.5 py-2 font-semibold">#</th>
+                      <th className="px-3.5 py-2 font-semibold">{t(lang, 'match.player')}</th>
+                      <th className="px-3.5 py-2 text-right font-semibold">{t(lang, 'match.kills')}</th>
+                      <th className="px-3.5 py-2 text-right font-semibold">{t(lang, 'match.deaths')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800/70">
+                    {matchSummary.leaderboard.map((entry, idx) => {
+                      const isAlly = entry.team === 'cyan';
+                      return (
+                        <tr
+                          key={entry.id}
+                          className={
+                            entry.isLocalPlayer
+                              ? 'bg-blue-500/10 font-semibold'
+                              : isAlly
+                              ? 'bg-blue-500/[0.03]'
+                              : 'bg-rose-500/[0.04]'
+                          }
+                        >
+                          <td className="px-3.5 py-2 font-mono text-slate-500 dark:text-slate-400">
+                            {idx + 1}
+                          </td>
+                          <td className="px-3.5 py-2">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                                  isAlly ? 'bg-blue-500' : 'bg-rose-500'
+                                }`}
+                              />
+                              <span className="text-slate-900 dark:text-slate-100">
+                                {entry.nickname}
+                              </span>
+                              {entry.isLocalPlayer && (
+                                <span className="rounded bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-300">
+                                  {t(lang, 'match.you')}
+                                </span>
+                              )}
+                              {entry.isBot && (
+                                <span className="rounded bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 dark:text-slate-400">
+                                  {t(lang, 'match.bot')}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3.5 py-2 text-right font-mono font-bold tabular-nums text-slate-900 dark:text-white">
+                            {entry.kills}
+                          </td>
+                          <td className="px-3.5 py-2 text-right font-mono tabular-nums text-slate-600 dark:text-slate-400">
+                            {entry.deaths}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
           <div className="mt-3 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
             <span>

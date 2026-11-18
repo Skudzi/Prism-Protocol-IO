@@ -1,6 +1,7 @@
 import {
   AVATAR_SKINS,
   BATTLE_PASS_TIERS,
+  MAP_LIST,
   MAPS,
   WEAPON_SKINS,
 } from './catalog';
@@ -9,6 +10,7 @@ import {
   MapDef,
   MapId,
   MapObstacle,
+  MatchLeaderboardEntry,
   MatchSummary,
   PlayerCloudProfile,
   WeaponId,
@@ -55,6 +57,33 @@ export function canManualReload(
 
 export function shouldAutoReload(ammo: number, isReloading: boolean): boolean {
   return !isReloading && ammo <= 0;
+}
+
+export const NORMAL_JUMP_VELOCITY = 8.0;
+export const UNDERFOOT_JUMP_VELOCITY = NORMAL_JUMP_VELOCITY * Math.sqrt(1.3);
+
+export function canTriggerUnderfootJump(
+  dirY: number,
+  hitDistance: number,
+  cooldownMsRemaining: number
+): boolean {
+  return cooldownMsRemaining <= 0 && dirY <= -0.65 && hitDistance <= 3.8;
+}
+
+export function applyUnderfootJumpVelocity(currentVelY: number): number {
+  return Math.max(currentVelY, UNDERFOOT_JUMP_VELOCITY);
+}
+
+export function pickRandomMapId(
+  excludeMapId?: MapId,
+  rng: () => number = Math.random
+): MapId {
+  const pool = excludeMapId
+    ? MAP_LIST.filter((m) => m.id !== excludeMapId)
+    : MAP_LIST;
+  const candidates = pool.length > 0 ? pool : MAP_LIST;
+  const idx = Math.min(candidates.length - 1, Math.floor(rng() * candidates.length));
+  return candidates[idx].id;
 }
 
 export function checkJumpPadCollision(
@@ -167,7 +196,7 @@ export function resolvePlayerMovement(
   let jumpPadTriggered = false;
 
   if (grounded && jumpPressed) {
-    nextVelY = 8.0;
+    nextVelY = NORMAL_JUMP_VELOCITY;
   } else if (!grounded) {
     nextVelY -= 20.5 * clampedDt;
   }
@@ -321,6 +350,17 @@ export function castLaserRay(
     const t = intersectRayAABB(origin, dir, obs);
     if (t !== null && t < closestDist) {
       closestDist = t;
+      hitType = 'obstacle';
+      hitZone = undefined;
+      hitTargetId = undefined;
+    }
+  }
+
+  // Intersect ground plane y=0 when aiming downward from above ground
+  if (origin.y > 0 && dir.y < -1e-5) {
+    const tFloor = -origin.y / dir.y;
+    if (tFloor >= 0 && tFloor < closestDist) {
+      closestDist = tFloor;
       hitType = 'obstacle';
       hitZone = undefined;
       hitTargetId = undefined;
@@ -557,4 +597,15 @@ export function applyMatchRewards(
     },
     lastSyncedAt: new Date().toISOString(),
   };
+}
+
+export function sortLeaderboardEntries(
+  entries: MatchLeaderboardEntry[]
+): MatchLeaderboardEntry[] {
+  return [...entries].sort((a, b) => {
+    if (b.kills !== a.kills) return b.kills - a.kills;
+    if (a.deaths !== b.deaths) return a.deaths - b.deaths;
+    if (a.isLocalPlayer !== b.isLocalPlayer) return a.isLocalPlayer ? -1 : 1;
+    return a.nickname.localeCompare(b.nickname);
+  });
 }

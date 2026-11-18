@@ -10,6 +10,79 @@ export interface AnimatedAvatarRig {
   armL: THREE.Group;
   armR: THREE.Group;
   head: THREE.Group;
+  outlineMat: THREE.MeshBasicMaterial;
+  xrayMaskMat: THREE.MeshBasicMaterial | null;
+  xrayOutlineMat: THREE.MeshBasicMaterial | null;
+  nametagSprite: THREE.Sprite | null;
+  nametagTexture: THREE.CanvasTexture | null;
+}
+
+export function createNametagSprite(
+  nickname: string,
+  relation: 'ally' | 'enemy'
+): { sprite: THREE.Sprite; texture: THREE.CanvasTexture } {
+  const canvas = document.createElement('canvas');
+  canvas.width = 384;
+  canvas.height = 96;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.clearRect(0, 0, 384, 96);
+
+  // Badge background + border (blue for teammates, red for enemies)
+  const borderColor = relation === 'ally' ? '#3b82f6' : '#ef4444';
+  const dotColor = relation === 'ally' ? '#60a5fa' : '#f87171';
+
+  ctx.fillStyle = 'rgba(7, 11, 18, 0.88)';
+  ctx.beginPath();
+  ctx.roundRect(10, 14, 364, 68, 14);
+  ctx.fill();
+
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = borderColor;
+  ctx.stroke();
+
+  // Relation dot
+  ctx.fillStyle = dotColor;
+  ctx.beginPath();
+  ctx.arc(38, 48, 9, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Player / bot nickname
+  ctx.font = '800 36px system-ui, -apple-system, Segoe UI, sans-serif';
+  ctx.fillStyle = '#f8fafc';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  const safeName = nickname.length > 14 ? `${nickname.slice(0, 13)}…` : nickname;
+  ctx.fillText(safeName, 60, 49, 294);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+
+  const mat = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: true,
+    depthWrite: false,
+    fog: false,
+  });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(2.4, 0.6, 1);
+  return { sprite, texture };
+}
+
+export function disposeAvatarRig(rig: AnimatedAvatarRig) {
+  if (rig.nametagTexture) {
+    rig.nametagTexture.dispose();
+  }
+  if (rig.nametagSprite) {
+    (rig.nametagSprite.material as THREE.SpriteMaterial).dispose();
+  }
+  rig.outlineMat.dispose();
+  rig.xrayMaskMat?.dispose();
+  rig.xrayOutlineMat?.dispose();
 }
 
 export function buildWeaponViewModel(
@@ -279,9 +352,98 @@ export function buildWeaponViewModel(
 export function buildAvatarRig(
   skin: AvatarSkinDef,
   teamColorHex: string,
-  shadowTexture: THREE.Texture
+  shadowTexture: THREE.Texture,
+  relation: 'ally' | 'enemy' = 'enemy',
+  nickname?: string
 ): AnimatedAvatarRig {
   const group = new THREE.Group();
+
+  const outlineColorHex = relation === 'ally' ? 0x3b82f6 : 0xef4444;
+  const outlineMat = new THREE.MeshBasicMaterial({
+    color: outlineColorHex,
+    side: THREE.BackSide,
+    toneMapped: false,
+    fog: false,
+  });
+
+  // Teammates (TDM allies) get a hollow blue silhouette line visible through walls;
+  // enemies remain strictly occluded behind geometry.
+  const xrayMaskMat =
+    relation === 'ally'
+      ? new THREE.MeshBasicMaterial({
+          colorWrite: false,
+          depthWrite: false,
+          depthTest: false,
+          stencilWrite: true,
+          stencilRef: 1,
+          stencilFunc: THREE.AlwaysStencilFunc,
+          stencilFail: THREE.ReplaceStencilOp,
+          stencilZFail: THREE.ReplaceStencilOp,
+          stencilZPass: THREE.ReplaceStencilOp,
+        })
+      : null;
+
+  const xrayOutlineMat =
+    relation === 'ally'
+      ? new THREE.MeshBasicMaterial({
+          color: 0x38bdf8,
+          side: THREE.BackSide,
+          transparent: true,
+          opacity: 0.92,
+          depthTest: true,
+          depthFunc: THREE.GreaterDepth,
+          depthWrite: false,
+          stencilWrite: false,
+          stencilFunc: THREE.NotEqualStencilFunc,
+          stencilRef: 1,
+          toneMapped: false,
+          fog: false,
+        })
+      : null;
+
+  const addOutlineShell = (
+    parent: THREE.Object3D,
+    sourceMesh: THREE.Mesh,
+    sx = 1.11,
+    sy = 1.07,
+    sz = 1.11
+  ) => {
+    const shell = new THREE.Mesh(sourceMesh.geometry, outlineMat);
+    shell.position.copy(sourceMesh.position);
+    shell.rotation.copy(sourceMesh.rotation);
+    shell.scale.set(
+      sourceMesh.scale.x * sx,
+      sourceMesh.scale.y * sy,
+      sourceMesh.scale.z * sz
+    );
+    shell.castShadow = false;
+    shell.receiveShadow = false;
+    parent.add(shell);
+
+    if (xrayMaskMat && xrayOutlineMat) {
+      const mask = new THREE.Mesh(sourceMesh.geometry, xrayMaskMat);
+      mask.position.copy(sourceMesh.position);
+      mask.rotation.copy(sourceMesh.rotation);
+      mask.scale.copy(sourceMesh.scale);
+      mask.renderOrder = 8;
+      mask.castShadow = false;
+      mask.receiveShadow = false;
+      parent.add(mask);
+
+      const xrayShell = new THREE.Mesh(sourceMesh.geometry, xrayOutlineMat);
+      xrayShell.position.copy(sourceMesh.position);
+      xrayShell.rotation.copy(sourceMesh.rotation);
+      xrayShell.scale.set(
+        sourceMesh.scale.x * (sx * 1.03),
+        sourceMesh.scale.y * (sy * 1.02),
+        sourceMesh.scale.z * (sz * 1.03)
+      );
+      xrayShell.renderOrder = 9;
+      xrayShell.castShadow = false;
+      xrayShell.receiveShadow = false;
+      parent.add(xrayShell);
+    }
+  };
 
   const clothMat = new THREE.MeshStandardMaterial({
     color: skin.clothingColor,
@@ -335,11 +497,13 @@ export function buildAvatarRig(
     thigh.position.y = -0.2;
     thigh.castShadow = true;
     legPivot.add(thigh);
+    addOutlineShell(legPivot, thigh, 1.22, 1.07, 1.22);
 
     const shin = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.26, 6, 12), armorMat);
     shin.position.y = -0.55;
     shin.castShadow = true;
     legPivot.add(shin);
+    addOutlineShell(legPivot, shin, 1.24, 1.07, 1.24);
 
     const kneePad = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 10), trimMat);
     kneePad.position.set(0, -0.38, 0.05);
@@ -349,6 +513,7 @@ export function buildAvatarRig(
     boot.position.set(0, -0.82, 0.04);
     boot.castShadow = true;
     legPivot.add(boot);
+    addOutlineShell(legPivot, boot, 1.2, 1.22, 1.14);
 
     return legPivot;
   };
@@ -372,12 +537,14 @@ export function buildAvatarRig(
   jacket.position.y = 0.3;
   jacket.castShadow = true;
   torso.add(jacket);
+  addOutlineShell(torso, jacket, 1.12, 1.07, 1.13);
 
   // Vest armor chest plate
   const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.38, 0.34), armorMat);
   chestPlate.position.set(0, 0.33, 0.01);
   chestPlate.castShadow = true;
   torso.add(chestPlate);
+  addOutlineShell(torso, chestPlate, 1.11, 1.11, 1.13);
 
   // Laser-tag chest & spine sensor rings
   const chestCore = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.38, 16), teamGlowMat);
@@ -397,12 +564,14 @@ export function buildAvatarRig(
   const pauldronL = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), trimMat);
   pauldronL.scale.set(1, 0.9, 1.15);
   armL.add(pauldronL);
+  addOutlineShell(armL, pauldronL, 1.18, 1.18, 1.16);
 
   const sleeveL = new THREE.Mesh(new THREE.CapsuleGeometry(0.068, 0.38, 6, 10), clothMat);
   sleeveL.position.set(0, -0.24, 0.12);
   sleeveL.rotation.x = -0.55;
   sleeveL.rotation.z = 0.12;
   armL.add(sleeveL);
+  addOutlineShell(armL, sleeveL, 1.24, 1.07, 1.24);
   torso.add(armL);
 
   // Articulated Right Arm + Blaster Carbine
@@ -411,11 +580,13 @@ export function buildAvatarRig(
   const pauldronR = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), trimMat);
   pauldronR.scale.set(1, 0.9, 1.15);
   armR.add(pauldronR);
+  addOutlineShell(armR, pauldronR, 1.18, 1.18, 1.16);
 
   const sleeveR = new THREE.Mesh(new THREE.CapsuleGeometry(0.068, 0.36, 6, 10), clothMat);
   sleeveR.position.set(0, -0.22, 0.14);
   sleeveR.rotation.x = -0.85;
   armR.add(sleeveR);
+  addOutlineShell(armR, sleeveR, 1.24, 1.07, 1.24);
 
   const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.11, 0.56), trimMat);
   rifle.position.set(-0.04, -0.32, 0.42);
@@ -434,6 +605,7 @@ export function buildAvatarRig(
   helmetShell.scale.set(0.95, 1.05, 1.08);
   helmetShell.castShadow = true;
   head.add(helmetShell);
+  addOutlineShell(head, helmetShell, 1.15, 1.14, 1.15);
 
   const crest = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.05, 0.28), trimMat);
   crest.position.set(0, 0.175, -0.01);
@@ -461,7 +633,30 @@ export function buildAvatarRig(
 
   torso.add(head);
 
-  return { group, torso, legL, legR, armL, armR, head };
+  let nametagSprite: THREE.Sprite | null = null;
+  let nametagTexture: THREE.CanvasTexture | null = null;
+  if (nickname) {
+    const builtTag = createNametagSprite(nickname, relation);
+    nametagSprite = builtTag.sprite;
+    nametagTexture = builtTag.texture;
+    nametagSprite.position.set(0, 2.34, 0);
+    group.add(nametagSprite);
+  }
+
+  return {
+    group,
+    torso,
+    legL,
+    legR,
+    armL,
+    armR,
+    head,
+    outlineMat,
+    xrayMaskMat,
+    xrayOutlineMat,
+    nametagSprite,
+    nametagTexture,
+  };
 }
 
 export function buildJumpPad(accentHex: string): {
