@@ -519,6 +519,79 @@
         "NovaPrime",
         "Zuzana_SK"
       ]
+    },
+    "testvanguard99": {
+      "nickname": "TestVanguard99",
+      "nicknameLower": "testvanguard99",
+      "passwordSalt": "e7078cbdf1e20d1f4269e7b6e3389b49",
+      "passwordHash": "77765402866462de7d21b2e00c4825ed5de365abb387f1054eeba36acaa45082f412412383c7c75d6f1dd65d0c85d2064b02739534164eca76d0b0f0ef8159a7",
+      "profile": {
+        "accountId": "acc-7048beef",
+        "nickname": "TestVanguard99",
+        "platform": "Console",
+        "credits": 650,
+        "xp": 0,
+        "battlePassXp": 250,
+        "battlePassPremium": false,
+        "claimedFreeTiers": [],
+        "claimedPremiumTiers": [],
+        "unlockedWeaponSkins": [
+          "cobalt_standard"
+        ],
+        "unlockedAvatarSkins": [
+          "vanguard_cyan"
+        ],
+        "equippedWeaponId": "pulse_carbine",
+        "equippedWeaponSkinId": "cobalt_standard",
+        "equippedAvatarSkinId": "vanguard_cyan",
+        "tutorialCompleted": false,
+        "easterEggUnlocked": false,
+        "stats": {
+          "matchesPlayed": 0,
+          "wins": 0,
+          "tags": 0,
+          "deaths": 0,
+          "shotsFired": 0,
+          "shotsHit": 0
+        },
+        "settings": {
+          "graphicsQuality": "high",
+          "shadowQuality": "high",
+          "renderDistance": 180,
+          "vsync": false,
+          "showFps": true,
+          "fpsCap": "unlimited",
+          "fov": 82,
+          "mouseSensitivity": 1,
+          "shadowsEnabled": true,
+          "particlesEnabled": true,
+          "audioEnabled": true,
+          "masterVolume": 0.7,
+          "darkMode": true,
+          "language": "en",
+          "crossPlatformEnabled": true
+        },
+        "keybinds": {
+          "moveForward": "KeyW",
+          "moveBackward": "KeyS",
+          "moveLeft": "KeyA",
+          "moveRight": "KeyD",
+          "jump": "Space",
+          "dash": "ShiftLeft",
+          "reload": "KeyR",
+          "chat": "KeyT",
+          "pause": "KeyP",
+          "slot1": "Digit1",
+          "slot2": "Digit2",
+          "slot3": "Digit3",
+          "slot4": "Digit4"
+        },
+        "lastSyncedAt": "2026-11-18T11:56:01.023Z"
+      },
+      "friends": [
+        "NovaPrime",
+        "Zuzana_SK"
+      ]
     }
   },
   "chatHistory": [

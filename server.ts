@@ -309,9 +309,57 @@ async function startServer() {
     }
 
     const salt = crypto.randomBytes(16).toString('hex');
-    const profile = createDefaultProfile(rawNick);
-    profile.accountId = `acc-${crypto.randomUUID().slice(0, 8)}`;
-    profile.platform = platform;
+    const baseProfile = createDefaultProfile(rawNick);
+    const seed = req.body?.seedProfile as Partial<PlayerCloudProfile> | undefined;
+    const profile: PlayerCloudProfile = {
+      ...baseProfile,
+      credits:
+        typeof seed?.credits === 'number' && Number.isFinite(seed.credits)
+          ? Math.max(0, Math.round(seed.credits))
+          : baseProfile.credits,
+      xp:
+        typeof seed?.xp === 'number' && Number.isFinite(seed.xp)
+          ? Math.max(0, Math.round(seed.xp))
+          : baseProfile.xp,
+      battlePassXp:
+        typeof seed?.battlePassXp === 'number' && Number.isFinite(seed.battlePassXp)
+          ? Math.max(0, Math.round(seed.battlePassXp))
+          : baseProfile.battlePassXp,
+      battlePassPremium:
+        typeof seed?.battlePassPremium === 'boolean'
+          ? seed.battlePassPremium
+          : baseProfile.battlePassPremium,
+      claimedFreeTiers: Array.isArray(seed?.claimedFreeTiers)
+        ? seed.claimedFreeTiers
+        : baseProfile.claimedFreeTiers,
+      claimedPremiumTiers: Array.isArray(seed?.claimedPremiumTiers)
+        ? seed.claimedPremiumTiers
+        : baseProfile.claimedPremiumTiers,
+      unlockedWeaponSkins: Array.isArray(seed?.unlockedWeaponSkins) && seed.unlockedWeaponSkins.length > 0
+        ? Array.from(new Set(['cobalt_standard', ...seed.unlockedWeaponSkins]))
+        : baseProfile.unlockedWeaponSkins,
+      unlockedAvatarSkins: Array.isArray(seed?.unlockedAvatarSkins) && seed.unlockedAvatarSkins.length > 0
+        ? Array.from(new Set(['vanguard_cyan', ...seed.unlockedAvatarSkins]))
+        : baseProfile.unlockedAvatarSkins,
+      equippedWeaponId: seed?.equippedWeaponId ?? baseProfile.equippedWeaponId,
+      equippedWeaponSkinId: seed?.equippedWeaponSkinId ?? baseProfile.equippedWeaponSkinId,
+      equippedAvatarSkinId: seed?.equippedAvatarSkinId ?? baseProfile.equippedAvatarSkinId,
+      tutorialCompleted:
+        typeof seed?.tutorialCompleted === 'boolean'
+          ? seed.tutorialCompleted
+          : baseProfile.tutorialCompleted,
+      easterEggUnlocked:
+        typeof seed?.easterEggUnlocked === 'boolean'
+          ? seed.easterEggUnlocked
+          : baseProfile.easterEggUnlocked,
+      stats: seed?.stats ?? baseProfile.stats,
+      settings: { ...DEFAULT_SETTINGS, ...(seed?.settings ?? {}) },
+      keybinds: { ...baseProfile.keybinds, ...(seed?.keybinds ?? {}) },
+      accountId: `acc-${crypto.randomUUID().slice(0, 8)}`,
+      nickname: rawNick,
+      platform,
+      lastSyncedAt: new Date().toISOString(),
+    };
 
     store.users[key] = {
       nickname: rawNick,

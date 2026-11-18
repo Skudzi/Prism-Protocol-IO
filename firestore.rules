@@ -68,9 +68,8 @@ service cloud.firestore {
       return val is int && val >= 0 && val <= maxVal;
     }
 
-    function isBoundedFloatOrInt(val, maxInt, maxFloat) {
-      return (val is int && val >= 0 && val <= maxInt) ||
-        (val is float && val >= 0.0 && val <= maxFloat);
+    function isNonNegNumber(val, maxVal) {
+      return val is number && val >= 0 && val <= maxVal;
     }
 
     function isValidTierList(arr, maxLen) {
@@ -86,8 +85,8 @@ service cloud.firestore {
 
     function isValidStats(stats) {
       return stats is map &&
+        stats.keys().hasAll(['matchesPlayed', 'wins', 'tags', 'deaths', 'shotsFired', 'shotsHit']) &&
         stats.keys().hasOnly(['matchesPlayed', 'wins', 'tags', 'deaths', 'shotsFired', 'shotsHit']) &&
-        stats.keys().size() == 6 &&
         isNonNegInt(stats.matchesPlayed, 10000000) &&
         isNonNegInt(stats.wins, 10000000) &&
         isNonNegInt(stats.tags, 100000000) &&
@@ -98,12 +97,16 @@ service cloud.firestore {
 
     function isValidSettings(s) {
       return s is map &&
+        s.keys().hasAll([
+          'graphicsQuality', 'shadowQuality', 'renderDistance', 'vsync', 'showFps',
+          'fpsCap', 'fov', 'mouseSensitivity', 'shadowsEnabled', 'particlesEnabled',
+          'audioEnabled', 'masterVolume', 'darkMode', 'language', 'crossPlatformEnabled'
+        ]) &&
         s.keys().hasOnly([
           'graphicsQuality', 'shadowQuality', 'renderDistance', 'vsync', 'showFps',
           'fpsCap', 'fov', 'mouseSensitivity', 'shadowsEnabled', 'particlesEnabled',
           'audioEnabled', 'masterVolume', 'darkMode', 'language', 'crossPlatformEnabled'
         ]) &&
-        s.keys().size() == 15 &&
         s.graphicsQuality is string && s.graphicsQuality in ['low', 'medium', 'high', 'ultra'] &&
         s.shadowQuality is string && s.shadowQuality in ['off', 'low', 'medium', 'high', 'ultra'] &&
         isNonNegInt(s.renderDistance, 1000) &&
@@ -111,11 +114,11 @@ service cloud.firestore {
         s.showFps is bool &&
         s.fpsCap is string && s.fpsCap in ['screen_locked', '60', '120', '165', '240', 'unlimited'] &&
         isNonNegInt(s.fov, 150) &&
-        isBoundedFloatOrInt(s.mouseSensitivity, 20, 20.0) &&
+        isNonNegNumber(s.mouseSensitivity, 20) &&
         s.shadowsEnabled is bool &&
         s.particlesEnabled is bool &&
         s.audioEnabled is bool &&
-        isBoundedFloatOrInt(s.masterVolume, 1, 1.0) &&
+        isNonNegNumber(s.masterVolume, 1) &&
         s.darkMode is bool &&
         s.language is string && s.language in ['en', 'es', 'sk', 'fr', 'ja'] &&
         s.crossPlatformEnabled is bool;
@@ -123,11 +126,14 @@ service cloud.firestore {
 
     function isValidKeybinds(k) {
       return k is map &&
+        k.keys().hasAll([
+          'moveForward', 'moveBackward', 'moveLeft', 'moveRight', 'jump', 'dash',
+          'reload', 'chat', 'pause', 'slot1', 'slot2', 'slot3', 'slot4'
+        ]) &&
         k.keys().hasOnly([
           'moveForward', 'moveBackward', 'moveLeft', 'moveRight', 'jump', 'dash',
           'reload', 'chat', 'pause', 'slot1', 'slot2', 'slot3', 'slot4'
         ]) &&
-        k.keys().size() == 13 &&
         isValidKeyCode(k.moveForward) &&
         isValidKeyCode(k.moveBackward) &&
         isValidKeyCode(k.moveLeft) &&

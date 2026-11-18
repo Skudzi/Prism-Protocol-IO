@@ -218,11 +218,19 @@ interface AccountPanelProps {
   profile: PlayerCloudProfile;
   isAuthenticated: boolean;
   authReady: boolean;
-  userEmail?: string | null;
   lang: LanguageCode;
   syncStatus: string;
-  onGoogleSignIn: () => Promise<{ ok: boolean; error?: string }>;
-  onUpdateIdentity: (nickname: string, platform: PlatformType) => Promise<{ ok: boolean; error?: string }>;
+  onLogin: (
+    username: string,
+    password: string,
+    platform: PlatformType
+  ) => Promise<{ ok: boolean; error?: string }>;
+  onRegister: (
+    username: string,
+    password: string,
+    platform: PlatformType
+  ) => Promise<{ ok: boolean; error?: string }>;
+  onUpdatePlatform: (platform: PlatformType) => Promise<{ ok: boolean; error?: string }>;
   onLogout: () => Promise<void>;
   onSyncNow: () => void;
 }
@@ -231,45 +239,53 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
   profile,
   isAuthenticated,
   authReady,
-  userEmail,
   lang,
   syncStatus,
-  onGoogleSignIn,
-  onUpdateIdentity,
+  onLogin,
+  onRegister,
+  onUpdatePlatform,
   onLogout,
   onSyncNow,
 }) => {
-  const [nickname, setNickname] = useState(profile.nickname);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [platform, setPlatform] = useState<PlatformType>(profile.platform);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    setNickname(profile.nickname);
     setPlatform(profile.platform);
-  }, [profile.nickname, profile.platform]);
+  }, [profile.platform]);
 
-  const handleGoogleLogin = async () => {
-    setErrorMsg(null);
-    setStatusMsg(null);
-    setBusy(true);
-    const res = await onGoogleSignIn();
-    setBusy(false);
-    if (!res.ok) {
-      setErrorMsg(res.error ?? 'Google sign-in failed');
-    }
-  };
-
-  const handleSaveIdentity = async (e: React.FormEvent) => {
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setStatusMsg(null);
     setBusy(true);
-    const res = await onUpdateIdentity(nickname.trim(), platform);
+    const res =
+      authMode === 'login'
+        ? await onLogin(username.trim(), password, platform)
+        : await onRegister(username.trim(), password, platform);
     setBusy(false);
     if (!res.ok) {
-      setErrorMsg(res.error ?? 'Could not save profile');
+      setErrorMsg(res.error ?? 'Authentication failed');
+    } else {
+      setPassword('');
+      setStatusMsg(t(lang, 'account.synced'));
+    }
+  };
+
+  const handleSavePlatform = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setStatusMsg(null);
+    setBusy(true);
+    const res = await onUpdatePlatform(platform);
+    setBusy(false);
+    if (!res.ok) {
+      setErrorMsg(res.error ?? 'Could not sync platform');
     } else {
       setStatusMsg(t(lang, 'account.synced'));
     }
@@ -294,12 +310,6 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
             <span className="text-slate-500 dark:text-slate-400">{t(lang, 'account.platform')}: </span>
             <span className="font-semibold">{profile.platform}</span>
           </div>
-          {isAuthenticated && userEmail && (
-            <div>
-              <span className="text-slate-500 dark:text-slate-400">Account: </span>
-              <span className="font-mono text-xs text-slate-800 dark:text-slate-200">{userEmail}</span>
-            </div>
-          )}
           <div>
             <span className="text-slate-500 dark:text-slate-400">K/D · Matches: </span>
             <span className="font-mono">
@@ -336,39 +346,140 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
       </div>
 
       {!isAuthenticated ? (
-        <div className="flex flex-col justify-between rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 p-5 space-y-4">
-          <div>
-            <div className="text-sm font-bold text-slate-900 dark:text-white">
-              {t(lang, 'account.title')}
+        <form
+          onSubmit={handleAuthSubmit}
+          className="flex flex-col justify-between rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 p-5 space-y-4"
+        >
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-bold text-slate-900 dark:text-white">
+                {authMode === 'login' ? t(lang, 'account.login') : t(lang, 'account.register')}
+              </div>
+              <div className="flex gap-1 rounded-md bg-slate-200 dark:bg-slate-800 p-0.5 text-xs">
+                <button
+                  type="button"
+                  data-testid="auth-tab-login"
+                  onClick={() => {
+                    setAuthMode('login');
+                    setErrorMsg(null);
+                  }}
+                  className={`rounded px-2.5 py-1 font-medium cursor-pointer ${
+                    authMode === 'login'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white'
+                      : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {t(lang, 'account.login')}
+                </button>
+                <button
+                  type="button"
+                  data-testid="auth-tab-register"
+                  onClick={() => {
+                    setAuthMode('register');
+                    setErrorMsg(null);
+                  }}
+                  className={`rounded px-2.5 py-1 font-medium cursor-pointer ${
+                    authMode === 'register'
+                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white'
+                      : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {t(lang, 'account.login') === 'Sign In' ? 'Register' : t(lang, 'account.register').split(' ')[0]}
+                </button>
+              </div>
             </div>
-            <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+
+            <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
               {t(lang, 'account.guest')}
             </p>
-            <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-              Sign in with your Google account to permanently save your Credits, Skins, Battle Pass tiers, Vault Easter Egg unlock, Stats, and Settings in Cloud Firestore across devices and updates.
-            </p>
+
+            <div>
+              <label
+                htmlFor="acc-username"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
+              >
+                Username (No Email Required)
+              </label>
+              <input
+                id="acc-username"
+                data-testid="account-username-input"
+                type="text"
+                required
+                minLength={3}
+                maxLength={20}
+                pattern="[a-zA-Z0-9_\-]{3,20}"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="e.g. Skudzi"
+                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="acc-password"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
+              >
+                {t(lang, 'account.password')}
+              </label>
+              <input
+                id="acc-password"
+                data-testid="account-password-input"
+                type="password"
+                required
+                minLength={4}
+                maxLength={72}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Min 4 characters"
+                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="acc-platform-auth"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
+              >
+                {t(lang, 'account.platform')}
+              </label>
+              <select
+                id="acc-platform-auth"
+                value={platform}
+                onChange={(e) => setPlatform(e.target.value as PlatformType)}
+                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+              >
+                <option value="Web">Web</option>
+                <option value="PC">PC</option>
+                <option value="Console">Console</option>
+                <option value="Mobile">Mobile</option>
+              </select>
+            </div>
+
+            {errorMsg && (
+              <p className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-500">
+                {errorMsg}
+              </p>
+            )}
           </div>
 
-          {errorMsg && (
-            <p className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-500">
-              {errorMsg}
-            </p>
-          )}
-
           <button
-            type="button"
-            data-testid="google-signin-btn"
+            type="submit"
+            data-testid="account-submit-btn"
             disabled={!authReady || busy}
-            onClick={() => void handleGoogleLogin()}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50 cursor-pointer"
           >
             <Cloud className="h-4 w-4" />
-            {busy ? 'Connecting...' : t(lang, 'account.googleSignIn')}
+            {busy
+              ? 'Connecting...'
+              : authMode === 'login'
+                ? t(lang, 'account.login')
+                : t(lang, 'account.register')}
           </button>
-        </div>
+        </form>
       ) : (
         <form
-          onSubmit={handleSaveIdentity}
+          onSubmit={handleSavePlatform}
           className="flex flex-col justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-5 space-y-4"
         >
           <div className="space-y-3">
@@ -376,28 +487,8 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
               {t(lang, 'account.synced')}
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-400">
-              All credits, weapon & avatar skins, Battle Pass tiers, keybinds, and Vault Easter Egg progress are saved in Cloud Firestore.
+              All credits, weapon &amp; avatar skins, Battle Pass tiers, keybinds, and Vault Easter Egg progress are saved to your Prism Cloud account.
             </p>
-
-            <div>
-              <label
-                htmlFor="acc-nick"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
-              >
-                {t(lang, 'account.nickname')}
-              </label>
-              <input
-                id="acc-nick"
-                type="text"
-                required
-                minLength={3}
-                maxLength={20}
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-                placeholder="e.g. Skudzi"
-                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
-              />
-            </div>
 
             <div>
               <label
