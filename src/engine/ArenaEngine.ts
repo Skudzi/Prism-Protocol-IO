@@ -44,6 +44,7 @@ import {
   AnimatedAvatarRig,
   buildAvatarRig,
   buildBridgeStructure,
+  buildBuildingFloor,
   buildBuildingRoof,
   buildBuildingWall,
   buildConcreteWall,
@@ -51,7 +52,9 @@ import {
   buildHealOrbModel,
   buildHouseStructure,
   buildJumpPad,
+  buildMetalAwning,
   buildPeekCover,
+  buildSandstoneWall,
   buildSquarePlatform,
   buildStreetLight,
   buildTexturedCrate,
@@ -65,9 +68,12 @@ import {
   createBarrierTexture,
   createConcreteWallTextures,
   createContactShadowTexture,
+  createCorrugatedMetalTextures,
   createCrateTexture,
   createHouseFacadeTexture,
   createRoadTexture,
+  createSandstoneWallTextures,
+  createSandyardFloorTextures,
   createSkyDomeMaterial,
   createTrampledFieldFloorTextures,
   createTrampledPathOverlayTexture,
@@ -954,8 +960,11 @@ export class ArenaEngine {
 
     const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
     const isTrampledField = map.floorStyle === 'trampled_earth';
+    const isSandyard = map.floorStyle === 'sandyard';
     const floorTex = isTrampledField
       ? createTrampledFieldFloorTextures(maxAniso)
+      : isSandyard
+      ? createSandyardFloorTextures(maxAniso)
       : createArenaFloorTextures(
           map.floorColor,
           map.accentColor,
@@ -966,14 +975,17 @@ export class ArenaEngine {
       color: 0xffffff,
       map: floorTex.map,
       bumpMap: floorTex.bumpMap,
-      bumpScale: isTrampledField ? 0.14 : 0.08,
-      roughness: isTrampledField ? 0.94 : map.isOutdoor ? 0.72 : 0.56,
-      metalness: isTrampledField ? 0.02 : map.isOutdoor ? 0.12 : 0.34,
+      bumpScale: isTrampledField ? 0.14 : isSandyard ? 0.11 : 0.08,
+      roughness: isTrampledField || isSandyard ? 0.94 : map.isOutdoor ? 0.72 : 0.56,
+      metalness: isTrampledField || isSandyard ? 0.02 : map.isOutdoor ? 0.12 : 0.34,
     });
 
     const barrierTex = createBarrierTexture(map.wallColor, map.accentColor, maxAniso);
-    const concreteTex = isTrampledField ? createConcreteWallTextures(map.wallColor, maxAniso) : null;
-    const woodTex = isTrampledField ? createWoodenCrateTextures(maxAniso) : null;
+    const concreteTex =
+      isTrampledField || isSandyard ? createConcreteWallTextures('#7a7f87', maxAniso) : null;
+    const woodTex = isTrampledField || isSandyard ? createWoodenCrateTextures(maxAniso) : null;
+    const sandstoneTex = isSandyard ? createSandstoneWallTextures(maxAniso) : null;
+    const corrugatedTex = isSandyard ? createCorrugatedMetalTextures(maxAniso) : null;
 
     if (map.isOutdoor) {
       // Extended outdoor ground disc + solid arena perimeter parapet wall + distant cliff vista
@@ -988,25 +1000,26 @@ export class ArenaEngine {
       const arenaSize = map.arenaHalfSize * 2;
       const borderMat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
-        map: concreteTex ? concreteTex.map : barrierTex,
-        bumpMap: concreteTex?.bumpMap ?? null,
-        bumpScale: concreteTex ? 0.05 : 0,
-        roughness: isTrampledField ? 0.88 : 0.72,
-        metalness: isTrampledField ? 0.06 : 0.25,
+        map: sandstoneTex ? sandstoneTex.map : concreteTex ? concreteTex.map : barrierTex,
+        bumpMap: sandstoneTex?.bumpMap ?? concreteTex?.bumpMap ?? null,
+        bumpScale: sandstoneTex || concreteTex ? 0.055 : 0,
+        roughness: isTrampledField || isSandyard ? 0.88 : 0.72,
+        metalness: isTrampledField || isSandyard ? 0.05 : 0.25,
       });
-      const borderTrimMat = isTrampledField
-        ? new THREE.MeshStandardMaterial({
-            color: 0x565b63,
-            roughness: 0.84,
-            metalness: 0.08,
-          })
-        : new THREE.MeshStandardMaterial({
-            color: map.accentColor,
-            emissive: map.accentColor,
-            emissiveIntensity: 1.3,
-            roughness: 0.2,
-          });
-      const borderH = isTrampledField ? 3.2 : 2.6;
+      const borderTrimMat =
+        isTrampledField || isSandyard
+          ? new THREE.MeshStandardMaterial({
+              color: isSandyard ? 0x9c7246 : 0x565b63,
+              roughness: 0.84,
+              metalness: 0.08,
+            })
+          : new THREE.MeshStandardMaterial({
+              color: map.accentColor,
+              emissive: map.accentColor,
+              emissiveIntensity: 1.3,
+              roughness: 0.2,
+            });
+      const borderH = isSandyard ? 5.2 : isTrampledField ? 3.2 : 2.6;
       const borderDefs: Array<[number, number, number, number, boolean]> = [
         [0, -map.arenaHalfSize, arenaSize + 0.9, 0.9, true],
         [0, map.arenaHalfSize, arenaSize + 0.9, 0.9, true],
@@ -1021,37 +1034,41 @@ export class ArenaEngine {
         this.mapGroup.add(wall);
 
         const rail = new THREE.Mesh(
-          new THREE.BoxGeometry(alongX ? ww - 0.2 : wd + 0.14, 0.12, alongX ? wd + 0.14 : ww - 0.2),
+          new THREE.BoxGeometry(alongX ? ww - 0.2 : wd + 0.14, 0.14, alongX ? wd + 0.14 : ww - 0.2),
           borderTrimMat
         );
         if (!alongX) rail.rotation.y = Math.PI / 2;
-        rail.position.set(wx, borderH + 0.06, wz);
+        rail.position.set(wx, borderH + 0.07, wz);
         this.mapGroup.add(rail);
       }
 
       const cliffMat = new THREE.MeshStandardMaterial({
-        color: isTrampledField ? 0x6b5642 : map.wallColor,
+        color: isSandyard ? 0xa88258 : isTrampledField ? 0x6b5642 : map.wallColor,
         roughness: 0.94,
         metalness: 0.04,
-        flatShading: isTrampledField,
+        flatShading: isTrampledField || isSandyard,
       });
       const ringCount = 32;
       for (let i = 0; i < ringCount; i++) {
         const ang = (i / ringCount) * Math.PI * 2;
-        const dist = isTrampledField
-          ? map.arenaHalfSize + 18 + (i % 3) * 5
-          : map.arenaHalfSize + 6.2 + (i % 3) * 2.0;
+        const dist =
+          isTrampledField || isSandyard
+            ? map.arenaHalfSize + 18 + (i % 3) * 5
+            : map.arenaHalfSize + 6.2 + (i % 3) * 2.0;
         const boulder = new THREE.Mesh(
-          new THREE.DodecahedronGeometry(isTrampledField ? 5.2 + (i % 3) * 1.6 : 3.8 + (i % 3) * 1.3, isTrampledField ? 0 : 1),
+          new THREE.DodecahedronGeometry(
+            isTrampledField || isSandyard ? 5.2 + (i % 3) * 1.6 : 3.8 + (i % 3) * 1.3,
+            isTrampledField || isSandyard ? 0 : 1
+          ),
           cliffMat
         );
         boulder.position.set(
           Math.cos(ang) * dist,
-          isTrampledField ? 0.9 : 1.5,
+          isTrampledField || isSandyard ? 0.9 : 1.5,
           Math.sin(ang) * dist
         );
         boulder.rotation.set(i * 0.35, ang, 0.2);
-        if (isTrampledField) {
+        if (isTrampledField || isSandyard) {
           boulder.scale.set(2.4, 0.72 + (i % 3) * 0.25, 1.8);
         } else {
           boulder.scale.set(1.3, 1.2 + (i % 2) * 0.5, 1.2);
@@ -1334,6 +1351,8 @@ export class ArenaEngine {
 
     const fallbackWoodTex = woodTex ?? createWoodenCrateTextures(maxAniso);
     const fallbackConcreteTex = concreteTex ?? createConcreteWallTextures(map.wallColor, maxAniso);
+    const fallbackSandstoneTex = sandstoneTex ?? createSandstoneWallTextures(maxAniso);
+    const fallbackMetalTex = corrugatedTex ?? createCorrugatedMetalTextures(maxAniso);
 
     for (const obs of map.obstacles) {
       if (obs.kind === 'house') {
@@ -1344,8 +1363,14 @@ export class ArenaEngine {
         this.mapGroup.add(buildConcreteWall(obs, fallbackConcreteTex.map, fallbackConcreteTex.bumpMap));
       } else if (obs.kind === 'building_wall') {
         this.mapGroup.add(buildBuildingWall(obs, fallbackConcreteTex.map, fallbackConcreteTex.bumpMap));
+      } else if (obs.kind === 'building_floor') {
+        this.mapGroup.add(buildBuildingFloor(obs, fallbackConcreteTex.map, fallbackConcreteTex.bumpMap));
       } else if (obs.kind === 'building_roof') {
         this.mapGroup.add(buildBuildingRoof(obs, fallbackConcreteTex.map, fallbackConcreteTex.bumpMap));
+      } else if (obs.kind === 'sandstone_wall') {
+        this.mapGroup.add(buildSandstoneWall(obs, fallbackSandstoneTex.map, fallbackSandstoneTex.bumpMap));
+      } else if (obs.kind === 'metal_awning') {
+        this.mapGroup.add(buildMetalAwning(obs, fallbackMetalTex.map, fallbackMetalTex.bumpMap));
       } else if (obs.kind === 'platform' && isTrampledField) {
         this.mapGroup.add(buildSquarePlatform(obs, fallbackConcreteTex.map, fallbackConcreteTex.bumpMap));
       } else if (obs.kind === 'crate') {

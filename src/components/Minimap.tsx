@@ -80,6 +80,17 @@ export const Minimap: React.FC<MinimapProps> = ({ data, lang }) => {
           </g>
         )}
 
+        {map.floorStyle === 'sandyard' && (
+          <rect
+            x={pad}
+            y={pad}
+            width={inner}
+            height={inner}
+            fill="#a17d52"
+            opacity={0.2}
+          />
+        )}
+
         {/* Arena perimeter border */}
         <rect
           x={pad}
@@ -103,10 +114,14 @@ export const Minimap: React.FC<MinimapProps> = ({ data, lang }) => {
               ? '#9a673a'
               : obs.kind === 'concrete_wall'
               ? '#94a3b8'
+              : obs.kind === 'sandstone_wall'
+              ? '#c89d6c'
               : obs.kind === 'building_wall'
               ? '#64748b'
-              : obs.kind === 'building_roof'
+              : obs.kind === 'building_roof' || obs.kind === 'building_floor'
               ? '#475569'
+              : obs.kind === 'metal_awning'
+              ? '#64748b'
               : obs.kind === 'platform'
               ? '#78716c'
               : obs.kind === 'house'
@@ -116,9 +131,15 @@ export const Minimap: React.FC<MinimapProps> = ({ data, lang }) => {
               : obs.kind === 'peek_wall'
               ? '#64748b'
               : '#3b4a5e';
+          const isOverhead =
+            obs.kind === 'building_roof' ||
+            obs.kind === 'building_floor' ||
+            obs.kind === 'metal_awning';
           const fillOpacity =
-            obs.kind === 'building_roof'
-              ? 0.25
+            obs.kind === 'building_roof' || obs.kind === 'building_floor'
+              ? 0.22
+              : obs.kind === 'metal_awning'
+              ? 0.24
               : obs.kind === 'bridge'
               ? 0.65
               : 0.9;
@@ -133,7 +154,7 @@ export const Minimap: React.FC<MinimapProps> = ({ data, lang }) => {
               fill={fill}
               fillOpacity={fillOpacity}
               stroke="#94a3b8"
-              strokeOpacity={obs.kind === 'building_roof' ? 0.35 : 0.22}
+              strokeOpacity={isOverhead ? 0.32 : 0.22}
               strokeWidth={0.5}
             />
           );

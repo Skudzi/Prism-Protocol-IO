@@ -524,18 +524,19 @@ test('mergeLocalAndCloudProfiles preserves newer offline progress and skin unloc
   assert.ok(merged.unlockedWeaponSkins.includes('solar_flare'));
 });
 
-test('Map 1 allows entering side buildings through doorways under roofs and uses wooden crates & concrete walls', () => {
+test('Map 1 features 3-floor side buildings with strictly 3 ground entrances, small hiding windows, and interior stairs', () => {
   const map1 = MAPS.hyperion_atrium;
   assert.equal(map1.isDaylight, true);
   assert.equal(map1.floorStyle, 'trampled_earth');
   assert.ok(map1.teamSpawns && map1.teamSpawns.cyan.length >= 4 && map1.teamSpawns.amber.length >= 4);
-  assert.ok(map1.obstacles.some((o) => o.kind === 'wood_crate'));
+  assert.ok(map1.obstacles.filter((o) => o.kind === 'wood_crate').length >= 30);
   assert.ok(map1.obstacles.some((o) => o.kind === 'concrete_wall'));
+  assert.ok(map1.obstacles.some((o) => o.kind === 'building_floor'));
   assert.ok(map1.obstacles.some((o) => o.kind === 'platform' && o.x === 0 && o.z === 0));
 
-  // Walk into West building doorway at (x = -46.7, z = 12) from outside (x = -44, z = 12) moving -X
-  const enterWest = resolvePlayerMovement(
-    { x: -45.5, y: 0, z: 12 },
+  // Middle courtyard doorway at z = 0 allows walking from yard into West building
+  const enterMidWest = resolvePlayerMovement(
+    { x: -45.5, y: 0, z: 0 },
     { x: 0, y: 0, z: 0 },
     0,
     -1,
@@ -547,11 +548,27 @@ test('Map 1 allows entering side buildings through doorways under roofs and uses
     10,
     0.48
   );
-  assert.ok(enterWest.pos.x < -45.5, 'Player should walk smoothly through West doorway into building');
+  assert.ok(enterMidWest.pos.x < -45.5, 'Player should enter West building via middle doorway (z=0)');
 
-  // Walk freely inside West building underneath roof (y=4.5)
-  const insideWest = resolvePlayerMovement(
-    { x: -53, y: 0, z: 12 },
+  // North end doorway at z = -47.3 allows walking into West building from North yard
+  const enterNorthWest = resolvePlayerMovement(
+    { x: -55, y: 0, z: -48.5 },
+    { x: 0, y: 0, z: 0 },
+    -1,
+    0,
+    0,
+    false,
+    true,
+    0.05,
+    map1,
+    10,
+    0.48
+  );
+  assert.ok(enterNorthWest.pos.z > -48.5, 'Player should enter West building via North end doorway');
+
+  // Opposite South end doorway at z = +47.3 allows walking into West building from South yard
+  const enterSouthWest = resolvePlayerMovement(
+    { x: -55, y: 0, z: 48.5 },
     { x: 0, y: 0, z: 0 },
     1,
     0,
@@ -560,10 +577,104 @@ test('Map 1 allows entering side buildings through doorways under roofs and uses
     true,
     0.05,
     map1,
-    8.2,
+    10,
     0.48
   );
-  assert.ok(insideWest.pos.z < 12, 'Player should move freely inside West building under its roof');
+  assert.ok(enterSouthWest.pos.z < 48.5, 'Player should enter West building via South end doorway');
+
+  // Solid hiding wall at z = -10 blocks walking through (only 3 ground entrances exist!)
+  const blockedAtWall = resolvePlayerMovement(
+    { x: -45.5, y: 0, z: -10 },
+    { x: 0, y: 0, z: 0 },
+    0,
+    -1,
+    0,
+    false,
+    true,
+    0.05,
+    map1,
+    10,
+    0.48
+  );
+  assert.ok(blockedAtWall.pos.x >= -46.0 - 0.48 - 1e-4, 'Solid concrete wall at z=-10 must block entry');
+
+  // Small window sill at z = -18.5 blocks walking straight through from ground level
+  const blockedAtWindow = resolvePlayerMovement(
+    { x: -45.5, y: 0, z: -18.5 },
+    { x: 0, y: 0, z: 0 },
+    0,
+    -1,
+    0,
+    false,
+    true,
+    0.05,
+    map1,
+    10,
+    0.48
+  );
+  assert.ok(blockedAtWindow.pos.x >= -46.0 - 0.48 - 1e-4, 'Window sill at z=-18.5 must block walking straight through');
+
+  // Climb interior F1->F2 staircase smoothly along x = -61.5 from z = -25.5 to z = -12.0
+  let pos = { x: -61.5, y: 0, z: -25.5 };
+  let vel = { x: 0, y: 0, z: 0 };
+  for (let step = 0; step < 36; step++) {
+    const res = resolvePlayerMovement(pos, vel, -1, 0, 0, false, true, 0.05, map1, 10, 0.48);
+    pos = res.pos;
+    vel = res.vel;
+  }
+  assert.ok(pos.y >= 3.7, `Player should reach Floor 2 (3.8m) via stairs, got y=${pos.y.toFixed(2)}`);
+
+  // Walk freely on Floor 3 (y = 7.60m)
+  const floor3Move = resolvePlayerMovement(
+    { x: -53, y: 7.6, z: -10 },
+    { x: 0, y: 0, z: 0 },
+    1,
+    0,
+    0,
+    false,
+    true,
+    0.05,
+    map1,
+    10,
+    0.48
+  );
+  assert.ok(floor3Move.pos.z < -10 && Math.abs(floor3Move.pos.y - 7.6) < 0.05, 'Player should move freely on Floor 3');
+});
+
+test('Map 2 (Sandyard) renders daylight desert compound with metal awning lanes and climbable East balcony', () => {
+  const sandyard = MAPS.orbital_hangar;
+  assert.equal(sandyard.isDaylight, true);
+  assert.equal(sandyard.floorStyle, 'sandyard');
+  assert.ok(sandyard.obstacles.some((o) => o.kind === 'sandstone_wall'));
+  assert.ok(sandyard.obstacles.some((o) => o.kind === 'metal_awning'));
+  assert.ok(sandyard.obstacles.some((o) => o.kind === 'wood_crate'));
+  assert.ok(sandyard.teamSpawns && sandyard.teamSpawns.cyan.length >= 4 && sandyard.teamSpawns.amber.length >= 4);
+
+  // Walk cleanly underneath West metal awning at (x=-37, z=-22)
+  const underAwning = resolvePlayerMovement(
+    { x: -37, y: 0, z: -22 },
+    { x: 0, y: 0, z: 0 },
+    -1,
+    0,
+    0,
+    false,
+    true,
+    0.05,
+    sandyard,
+    10,
+    0.48
+  );
+  assert.ok(underAwning.pos.z > -22 && Math.abs(underAwning.pos.y) < 0.01, 'Player should walk under metal shed awning');
+
+  // Climb North sandstone stairs up to East Balcony (x=35, y=3.2)
+  let pos = { x: 35, y: 0, z: -27.5 };
+  let vel = { x: 0, y: 0, z: 0 };
+  for (let step = 0; step < 30; step++) {
+    const res = resolvePlayerMovement(pos, vel, -1, 0, 0, false, true, 0.05, sandyard, 10, 0.48);
+    pos = res.pos;
+    vel = res.vel;
+  }
+  assert.ok(pos.y >= 3.1, `Player should climb onto Sandyard East Balcony (3.2m), got y=${pos.y.toFixed(2)}`);
 });
 
 test('sampleKillCamClip interpolates attacker perspective smoothly over the 3-second replay', () => {

@@ -95,7 +95,10 @@ export interface MapObstacle {
     | 'wood_crate'
     | 'concrete_wall'
     | 'building_wall'
+    | 'building_floor'
     | 'building_roof'
+    | 'sandstone_wall'
+    | 'metal_awning'
     | 'ice'
     | 'bridge'
     | 'house'
@@ -167,7 +170,7 @@ export interface MapDef {
   arenaHalfSize: number;
   isOutdoor: boolean;
   isDaylight?: boolean;
-  floorStyle?: 'default' | 'trampled_earth';
+  floorStyle?: 'default' | 'trampled_earth' | 'sandyard';
   hasRoads?: boolean;
   hasTrees?: boolean;
   hasStreetLights?: boolean;

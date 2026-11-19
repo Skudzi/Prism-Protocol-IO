@@ -1364,3 +1364,235 @@ export function createConcreteWallTextures(
   return { map, bumpMap };
 }
 
+export function createSandyardFloorTextures(
+  maxAnisotropy: number
+): { map: THREE.CanvasTexture; bumpMap: THREE.CanvasTexture } {
+  const size = 512;
+  const colorCanvas = document.createElement('canvas');
+  colorCanvas.width = size;
+  colorCanvas.height = size;
+  const ctx = colorCanvas.getContext('2d')!;
+
+  const bumpCanvas = document.createElement('canvas');
+  bumpCanvas.width = size;
+  bumpCanvas.height = size;
+  const bctx = bumpCanvas.getContext('2d')!;
+
+  // Sun-baked Standoff 2 Sandyard desert sand & worn limestone dust base
+  ctx.fillStyle = '#c8a577';
+  ctx.fillRect(0, 0, size, size);
+  bctx.fillStyle = '#828282';
+  bctx.fillRect(0, 0, size, size);
+
+  // Soft wind-blown sand drifts & packed stone patches
+  for (let i = 0; i < 60; i++) {
+    const px = (i * 93 + (i % 7) * 29) % size;
+    const py = (i * 147 + (i % 11) * 21) % size;
+    const r = 18 + (i % 5) * 10;
+    const g = ctx.createRadialGradient(px, py, 2, px, py, r);
+    const col =
+      i % 3 === 0
+        ? 'rgba(173, 134, 88, 0.30)'
+        : i % 3 === 1
+        ? 'rgba(222, 194, 152, 0.28)'
+        : 'rgba(148, 114, 74, 0.22)';
+    g.addColorStop(0, col);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(px - r, py - r, r * 2, r * 2);
+  }
+
+  // Worn sandy courtyard flagstones peeking through the desert dust
+  const tileW = 128;
+  const tileH = 128;
+  for (let row = 0; row < 4; row++) {
+    const ox = (row % 2) * 64;
+    for (let col = -1; col <= 4; col++) {
+      const x = col * tileW + ox;
+      const y = row * tileH;
+      ctx.strokeStyle = 'rgba(128, 96, 62, 0.22)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x + 2, y + 2, tileW - 4, tileH - 4);
+      bctx.strokeStyle = '#5a5a5a';
+      bctx.lineWidth = 4;
+      bctx.strokeRect(x + 2, y + 2, tileW - 4, tileH - 4);
+    }
+  }
+
+  // Fine desert sand grain & pebbles
+  for (let i = 0; i < 5800; i++) {
+    const rx = (i * 71 + (i % 17) * 13) % size;
+    const ry = (i * 139 + (i % 23) * 9) % size;
+    const bright = i % 3 === 0;
+    ctx.fillStyle = bright ? 'rgba(244, 224, 192, 0.22)' : 'rgba(116, 84, 50, 0.2)';
+    ctx.fillRect(rx, ry, 2, 2);
+    bctx.fillStyle = bright ? '#aaaaaa' : '#5e5e5e';
+    bctx.fillRect(rx, ry, 2, 2);
+  }
+
+  const map = new THREE.CanvasTexture(colorCanvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = THREE.RepeatWrapping;
+  map.wrapT = THREE.RepeatWrapping;
+  map.repeat.set(26, 26);
+  map.anisotropy = maxAnisotropy;
+
+  const bumpMap = new THREE.CanvasTexture(bumpCanvas);
+  bumpMap.wrapS = THREE.RepeatWrapping;
+  bumpMap.wrapT = THREE.RepeatWrapping;
+  bumpMap.repeat.set(26, 26);
+  bumpMap.anisotropy = maxAnisotropy;
+
+  return { map, bumpMap };
+}
+
+export function createSandstoneWallTextures(
+  maxAnisotropy: number
+): { map: THREE.CanvasTexture; bumpMap: THREE.CanvasTexture } {
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+
+  const bumpCanvas = document.createElement('canvas');
+  bumpCanvas.width = size;
+  bumpCanvas.height = size;
+  const bctx = bumpCanvas.getContext('2d')!;
+
+  // Warm weathered desert stucco & sandstone plaster
+  ctx.fillStyle = '#cfa97a';
+  ctx.fillRect(0, 0, size, size);
+  bctx.fillStyle = '#848484';
+  bctx.fillRect(0, 0, size, size);
+
+  // Soft sun-bleached plaster mottling
+  for (let i = 0; i < 42; i++) {
+    const x = (i * 97 + (i % 7) * 29) % size;
+    const y = (i * 149 + (i % 5) * 37) % size;
+    const r = 34 + (i % 4) * 18;
+    const g = ctx.createRadialGradient(x, y, 2, x, y, r);
+    g.addColorStop(0, i % 2 === 0 ? 'rgba(245, 226, 198, 0.14)' : 'rgba(138, 96, 56, 0.12)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+
+  // Lower stone brick masonry band (bottom 30%)
+  ctx.fillStyle = 'rgba(136, 98, 60, 0.36)';
+  ctx.fillRect(0, size * 0.7, size, size * 0.3);
+  ctx.strokeStyle = 'rgba(92, 62, 34, 0.42)';
+  ctx.lineWidth = 3;
+  bctx.strokeStyle = '#3c3c3c';
+  bctx.lineWidth = 4;
+  for (let y = Math.floor(size * 0.7); y <= size; y += 38) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(size, y);
+    ctx.stroke();
+    bctx.beginPath();
+    bctx.moveTo(0, y);
+    bctx.lineTo(size, y);
+    bctx.stroke();
+
+    const ox = ((Math.round(y / 38) % 2) * 48);
+    for (let x = ox; x <= size; x += 96) {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y + 38);
+      ctx.stroke();
+      bctx.beginPath();
+      bctx.moveTo(x, y);
+      bctx.lineTo(x, y + 38);
+      bctx.stroke();
+    }
+  }
+
+  // Subtle stucco grain
+  for (let i = 0; i < 4200; i++) {
+    const rx = (i * 61 + (i % 13) * 17) % size;
+    const ry = (i * 131 + (i % 19) * 11) % size;
+    const bright = i % 3 === 0;
+    ctx.fillStyle = bright ? 'rgba(255,244,225,0.08)' : 'rgba(92,62,34,0.09)';
+    ctx.fillRect(rx, ry, 2, 2);
+    bctx.fillStyle = bright ? '#9f9f9f' : '#646464';
+    bctx.fillRect(rx, ry, 2, 2);
+  }
+
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = THREE.RepeatWrapping;
+  map.wrapT = THREE.RepeatWrapping;
+  map.anisotropy = maxAnisotropy;
+
+  const bumpMap = new THREE.CanvasTexture(bumpCanvas);
+  bumpMap.wrapS = THREE.RepeatWrapping;
+  bumpMap.wrapT = THREE.RepeatWrapping;
+  bumpMap.anisotropy = maxAnisotropy;
+
+  return { map, bumpMap };
+}
+
+export function createCorrugatedMetalTextures(
+  maxAnisotropy: number
+): { map: THREE.CanvasTexture; bumpMap: THREE.CanvasTexture } {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+
+  const bumpCanvas = document.createElement('canvas');
+  bumpCanvas.width = size;
+  bumpCanvas.height = size;
+  const bctx = bumpCanvas.getContext('2d')!;
+
+  ctx.fillStyle = '#5e666e';
+  ctx.fillRect(0, 0, size, size);
+  bctx.fillStyle = '#808080';
+  bctx.fillRect(0, 0, size, size);
+
+  // Corrugated sheet ridges + subtle desert rust weathering
+  const step = 16;
+  for (let x = 0; x < size; x += step) {
+    const grad = ctx.createLinearGradient(x, 0, x + step, 0);
+    grad.addColorStop(0, '#444b52');
+    grad.addColorStop(0.5, '#7c848c');
+    grad.addColorStop(1, '#444b52');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, 0, step, size);
+
+    const bgrad = bctx.createLinearGradient(x, 0, x + step, 0);
+    bgrad.addColorStop(0, '#363636');
+    bgrad.addColorStop(0.5, '#dcdcdc');
+    bgrad.addColorStop(1, '#363636');
+    bctx.fillStyle = bgrad;
+    bctx.fillRect(x, 0, step, size);
+  }
+
+  // Rust streaks
+  for (let i = 0; i < 26; i++) {
+    const rx = (i * 53) % size;
+    const ry = (i * 89) % size;
+    const r = 14 + (i % 4) * 8;
+    const rg = ctx.createRadialGradient(rx, ry, 1, rx, ry, r);
+    rg.addColorStop(0, 'rgba(136, 72, 38, 0.34)');
+    rg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(rx - r, ry - r, r * 2, r * 2);
+  }
+
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = THREE.RepeatWrapping;
+  map.wrapT = THREE.RepeatWrapping;
+  map.anisotropy = maxAnisotropy;
+
+  const bumpMap = new THREE.CanvasTexture(bumpCanvas);
+  bumpMap.wrapS = THREE.RepeatWrapping;
+  bumpMap.wrapT = THREE.RepeatWrapping;
+  bumpMap.anisotropy = maxAnisotropy;
+
+  return { map, bumpMap };
+}
+

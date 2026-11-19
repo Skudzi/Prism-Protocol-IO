@@ -1473,8 +1473,8 @@ export function buildBuildingWall(
   wall.receiveShadow = true;
   group.add(wall);
 
-  // Subtle concrete window sill / base plinth for ground-level segments
-  if (obs.y < 0.1 && obs.h <= 1.25) {
+  // Subtle concrete window sill / base plinth for ground and upper-floor window sills
+  if (obs.h <= 1.28) {
     const sill = new THREE.Mesh(
       new THREE.BoxGeometry(obs.w + 0.14, 0.08, obs.d + 0.06),
       sillMat
@@ -1484,6 +1484,34 @@ export function buildBuildingWall(
     sill.receiveShadow = true;
     group.add(sill);
   }
+
+  return group;
+}
+
+export function buildBuildingFloor(
+  obs: MapObstacle,
+  concreteTex: THREE.Texture,
+  concreteBump: THREE.Texture
+): THREE.Group {
+  const group = new THREE.Group();
+  group.position.set(obs.x, obs.y, obs.z);
+
+  const slabMat = new THREE.MeshStandardMaterial({
+    color: 0xd1d5db,
+    map: concreteTex,
+    bumpMap: concreteBump,
+    bumpScale: 0.045,
+    roughness: 0.88,
+    metalness: 0.06,
+  });
+
+  const geo = new THREE.BoxGeometry(obs.w, obs.h, obs.d);
+  applyWorldBoxUVs(geo, obs.w, obs.h, obs.d, 5.0);
+  const slab = new THREE.Mesh(geo, slabMat);
+  slab.position.y = obs.h * 0.5;
+  slab.castShadow = true;
+  slab.receiveShadow = true;
+  group.add(slab);
 
   return group;
 }
@@ -1528,6 +1556,95 @@ export function buildBuildingRoof(
       beamMat
     );
     beam.position.set(0, -0.14, zPos);
+    beam.castShadow = true;
+    group.add(beam);
+  }
+
+  return group;
+}
+
+export function buildSandstoneWall(
+  obs: MapObstacle,
+  sandstoneTex: THREE.Texture,
+  sandstoneBump: THREE.Texture
+): THREE.Group {
+  const group = new THREE.Group();
+  group.position.set(obs.x, obs.y, obs.z);
+
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: sandstoneTex,
+    bumpMap: sandstoneBump,
+    bumpScale: 0.06,
+    roughness: 0.88,
+    metalness: 0.04,
+  });
+  const copingMat = new THREE.MeshStandardMaterial({
+    color: 0xa67c52,
+    roughness: 0.86,
+    metalness: 0.05,
+  });
+
+  const geo = new THREE.BoxGeometry(obs.w, obs.h, obs.d);
+  applyWorldBoxUVs(geo, obs.w, obs.h, obs.d, 4.5);
+  const mesh = new THREE.Mesh(geo, wallMat);
+  mesh.position.y = obs.h * 0.5;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  group.add(mesh);
+
+  const coping = new THREE.Mesh(
+    new THREE.BoxGeometry(obs.w + 0.14, 0.12, obs.d + 0.14),
+    copingMat
+  );
+  coping.position.y = obs.h - 0.05;
+  coping.castShadow = true;
+  coping.receiveShadow = true;
+  group.add(coping);
+
+  return group;
+}
+
+export function buildMetalAwning(
+  obs: MapObstacle,
+  metalTex: THREE.Texture,
+  metalBump: THREE.Texture
+): THREE.Group {
+  const group = new THREE.Group();
+  group.position.set(obs.x, obs.y, obs.z);
+
+  const metalMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: metalTex,
+    bumpMap: metalBump,
+    bumpScale: 0.07,
+    roughness: 0.62,
+    metalness: 0.55,
+  });
+  const trussMat = new THREE.MeshStandardMaterial({
+    color: 0x3b2f26,
+    roughness: 0.78,
+    metalness: 0.35,
+  });
+
+  const roofGeo = new THREE.BoxGeometry(obs.w, obs.h, obs.d);
+  applyWorldBoxUVs(roofGeo, obs.w, obs.h, obs.d, 3.2);
+  const roof = new THREE.Mesh(roofGeo, metalMat);
+  roof.position.y = obs.h * 0.5;
+  roof.castShadow = true;
+  roof.receiveShadow = true;
+  group.add(roof);
+
+  // Support beams underneath corrugated shed roof
+  const beamCount = Math.max(2, Math.floor(obs.d / 9));
+  const stepZ = obs.d / (beamCount + 1);
+  for (let i = 1; i <= beamCount; i++) {
+    const zPos = -obs.d * 0.5 + i * stepZ;
+    const beam = new THREE.Mesh(
+      new THREE.BoxGeometry(obs.w - 0.3, 0.24, 0.32),
+      trussMat
+    );
+    beam.position.set(0, -0.12, zPos);
     beam.castShadow = true;
     group.add(beam);
   }
