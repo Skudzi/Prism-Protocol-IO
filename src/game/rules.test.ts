@@ -524,12 +524,14 @@ test('mergeLocalAndCloudProfiles preserves newer offline progress and skin unloc
   assert.ok(merged.unlockedWeaponSkins.includes('solar_flare'));
 });
 
-test('Map 1 features 3-floor side buildings with strictly 3 ground entrances, small hiding windows, and interior stairs', () => {
+test('Map 1 features 3-floor side buildings, 3-5 house-sized box piles, and interior stairs', () => {
   const map1 = MAPS.hyperion_atrium;
   assert.equal(map1.isDaylight, true);
   assert.equal(map1.floorStyle, 'trampled_earth');
   assert.ok(map1.teamSpawns && map1.teamSpawns.cyan.length >= 4 && map1.teamSpawns.amber.length >= 4);
   assert.ok(map1.obstacles.filter((o) => o.kind === 'wood_crate').length >= 30);
+  const boxPiles = map1.obstacles.filter((o) => o.kind === 'box_pile');
+  assert.ok(boxPiles.length >= 3 && boxPiles.length <= 5, `Expected 3-5 house-sized box piles on Map 1, got ${boxPiles.length}`);
   assert.ok(map1.obstacles.some((o) => o.kind === 'concrete_wall'));
   assert.ok(map1.obstacles.some((o) => o.kind === 'building_floor'));
   assert.ok(map1.obstacles.some((o) => o.kind === 'platform' && o.x === 0 && o.z === 0));
@@ -641,18 +643,60 @@ test('Map 1 features 3-floor side buildings with strictly 3 ground entrances, sm
   assert.ok(floor3Move.pos.z < -10 && Math.abs(floor3Move.pos.y - 7.6) < 0.05, 'Player should move freely on Floor 3');
 });
 
-test('Map 2 (Sandyard) renders daylight desert compound with metal awning lanes and climbable East balcony', () => {
+test('Map 2 (Sandyard) touches L/R perimeter walls, has 30+ outdoor obstacles, solid street lights, 2-floor Mid building with L/R stairs & distinct F1/F2 cover, and spawn sniper walls', () => {
   const sandyard = MAPS.orbital_hangar;
   assert.equal(sandyard.isDaylight, true);
   assert.equal(sandyard.floorStyle, 'sandyard');
-  assert.ok(sandyard.obstacles.some((o) => o.kind === 'sandstone_wall'));
-  assert.ok(sandyard.obstacles.some((o) => o.kind === 'metal_awning'));
-  assert.ok(sandyard.obstacles.some((o) => o.kind === 'wood_crate'));
   assert.ok(sandyard.teamSpawns && sandyard.teamSpawns.cyan.length >= 4 && sandyard.teamSpawns.amber.length >= 4);
 
-  // Walk cleanly underneath West metal awning at (x=-37, z=-22)
+  // Full width touching Left (-68) and Right (+68) arena borders
+  assert.ok(sandyard.obstacles.some((o) => o.x - o.w * 0.5 <= -67.9), 'Map 2 must touch Left border wall (-68)');
+  assert.ok(sandyard.obstacles.some((o) => o.x + o.w * 0.5 >= 67.9), 'Map 2 must touch Right border wall (+68)');
+
+  // At least 30 outdoor varied obstacles (excluding Mid building & street lights)
+  const outdoorCover = sandyard.obstacles.filter(
+    (o) => (Math.abs(o.x) > 20 || Math.abs(o.z) > 24) && (o.kind === 'wood_crate' || o.kind === 'concrete_wall')
+  );
+  assert.ok(outdoorCover.length >= 30, `Expected >= 30 outdoor obstacles, got ${outdoorCover.length}`);
+
+  // Mid building Floor 1 (y === 0) & Floor 2 (y === 4.3) interior obstacles: >= 25 small and >= 10 big on EACH floor, placed differently
+  const isInsideMid = (o: (typeof sandyard.obstacles)[number]) => Math.abs(o.x) < 18.0 && Math.abs(o.z) < 22.0;
+  const f1Cover = sandyard.obstacles.filter((o) => isInsideMid(o) && o.y === 0 && (o.kind === 'wood_crate' || o.kind === 'concrete_wall' || o.kind === 'sandstone_wall'));
+  const f2Cover = sandyard.obstacles.filter((o) => isInsideMid(o) && Math.abs(o.y - 4.3) < 0.05 && (o.kind === 'wood_crate' || o.kind === 'concrete_wall' || o.kind === 'sandstone_wall'));
+  const f1Small = f1Cover.filter((o) => Math.max(o.w, o.d) < 2.2);
+  const f1Big = f1Cover.filter((o) => Math.max(o.w, o.d) >= 2.2);
+  const f2Small = f2Cover.filter((o) => Math.max(o.w, o.d) < 2.2);
+  const f2Big = f2Cover.filter((o) => Math.max(o.w, o.d) >= 2.2);
+  assert.ok(f1Small.length >= 25 && f1Big.length >= 10, `F1 cover needs >=25 small & >=10 big, got ${f1Small.length}/${f1Big.length}`);
+  assert.ok(f2Small.length >= 25 && f2Big.length >= 10, `F2 cover needs >=25 small & >=10 big, got ${f2Small.length}/${f2Big.length}`);
+  const f1Coords = new Set(f1Cover.map((o) => `${o.x},${o.z}`));
+  const f2Coords = new Set(f2Cover.map((o) => `${o.x},${o.z}`));
+  const identical = [...f1Coords].filter((k) => f2Coords.has(k));
+  assert.ok(identical.length === 0, `F1 and F2 cover must be placed differently, found overlaps: ${identical.join(' ')}`);
+
+  // Solid street lights cannot be walked through or shot through
+  const streetLights = sandyard.obstacles.filter((o) => o.kind === 'street_light');
+  assert.ok(streetLights.length >= 6, 'Sandyard should have solid street light obstacles');
+  const blockedByLight = resolvePlayerMovement(
+    { x: -13, y: 0, z: -31.8 },
+    { x: 0, y: 0, z: 0 },
+    1,
+    0,
+    0,
+    false,
+    true,
+    0.05,
+    sandyard,
+    10,
+    0.48
+  );
+  assert.ok(blockedByLight.pos.z >= -32.55 - 0.48 - 1e-4, 'Solid street light must block player walking through');
+  const lightRay = castLaserRay({ x: -13, y: 1.56, z: -30 }, { x: 0, y: 0, z: -1 }, 10, sandyard, []);
+  assert.equal(lightRay.hitType, 'obstacle', 'Solid street light must block laser shots');
+
+  // Walk cleanly underneath West metal awning (x=-55, z=-22)
   const underAwning = resolvePlayerMovement(
-    { x: -37, y: 0, z: -22 },
+    { x: -55, y: 0, z: -22 },
     { x: 0, y: 0, z: 0 },
     -1,
     0,
@@ -664,17 +708,46 @@ test('Map 2 (Sandyard) renders daylight desert compound with metal awning lanes 
     10,
     0.48
   );
-  assert.ok(underAwning.pos.z > -22 && Math.abs(underAwning.pos.y) < 0.01, 'Player should walk under metal shed awning');
+  assert.ok(underAwning.pos.z > -22 && Math.abs(underAwning.pos.y) < 0.01, 'Player should walk under West metal shed awning');
 
-  // Climb North sandstone stairs up to East Balcony (x=35, y=3.2)
-  let pos = { x: 35, y: 0, z: -27.5 };
-  let vel = { x: 0, y: 0, z: 0 };
+  // Climb North sandstone stairs up to East Balcony (x=55, y=3.4)
+  let eastPos = { x: 55, y: 0, z: -26.5 };
+  let eastVel = { x: 0, y: 0, z: 0 };
   for (let step = 0; step < 30; step++) {
-    const res = resolvePlayerMovement(pos, vel, -1, 0, 0, false, true, 0.05, sandyard, 10, 0.48);
-    pos = res.pos;
-    vel = res.vel;
+    const res = resolvePlayerMovement(eastPos, eastVel, -1, 0, 0, false, true, 0.05, sandyard, 10, 0.48);
+    eastPos = res.pos;
+    eastVel = res.vel;
   }
-  assert.ok(pos.y >= 3.1, `Player should climb onto Sandyard East Balcony (3.2m), got y=${pos.y.toFixed(2)}`);
+  assert.ok(eastPos.y >= 3.3, `Player should climb onto Sandyard East Balcony (3.4m), got y=${eastPos.y.toFixed(2)}`);
+
+  // Climb Outside Left staircase directly to Mid Building Floor 2 (x=-33.5 -> -17, z=0, y=4.30)
+  let midLPos = { x: -33.5, y: 0, z: 0 };
+  let midLVel = { x: 0, y: 0, z: 0 };
+  for (let step = 0; step < 38; step++) {
+    const res = resolvePlayerMovement(midLPos, midLVel, 0, 1, 0, false, true, 0.05, sandyard, 10, 0.48);
+    midLPos = res.pos;
+    midLVel = res.vel;
+  }
+  assert.ok(midLPos.y >= 4.2, `Outside Left stairs must climb onto Mid Building Floor 2 (4.3m), got y=${midLPos.y.toFixed(2)}`);
+
+  // Spawn Sniper Vantage Wall blocks spawn-to-spawn ground sightline & spawn stairs climb to y=2.2m deck
+  const spawnGroundRay = castLaserRay({ x: 0, y: 1.56, z: -56 }, { x: 0, y: 0, z: 1 }, 115, sandyard, []);
+  assert.equal(spawnGroundRay.hitType, 'obstacle');
+  assert.ok(spawnGroundRay.distance < 15, 'Spawn sniper wall must block direct ground spawn-to-spawn sniping');
+
+  let sniperPos = { x: 0, y: 0, z: -52.0 };
+  let sniperVel = { x: 0, y: 0, z: 0 };
+  for (let step = 0; step < 20; step++) {
+    const res = resolvePlayerMovement(sniperPos, sniperVel, -1, 0, 0, false, true, 0.05, sandyard, 10, 0.48);
+    sniperPos = res.pos;
+    sniperVel = res.vel;
+  }
+  assert.ok(sniperPos.y >= 2.15, `Spawn sniper stairs should climb to 2.2m deck, got y=${sniperPos.y.toFixed(2)}`);
+
+  // Anti-spawncamp barrier inside North Mid entrance blocks straight doorway shot at z = -18.5
+  const doorwayRay = castLaserRay({ x: 0, y: 1.56, z: -25 }, { x: 0, y: 0, z: 1 }, 20, sandyard, []);
+  assert.equal(doorwayRay.hitType, 'obstacle');
+  assert.ok(doorwayRay.distance < 7.5, 'Anti-spawncamp barrier right inside Floor 1 entrance must block straight doorway shots');
 });
 
 test('sampleKillCamClip interpolates attacker perspective smoothly over the 3-second replay', () => {

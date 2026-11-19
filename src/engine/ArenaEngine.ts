@@ -60,6 +60,7 @@ import {
   buildTexturedCrate,
   buildTreeModel,
   buildWeaponViewModel,
+  buildWoodenBoxPile,
   buildWoodenCrate,
   disposeAvatarRig,
 } from './models';
@@ -1257,37 +1258,27 @@ export class ArenaEngine {
       }
     }
 
-    // Build Street Lights along roads/corridors
-    if (map.hasStreetLights) {
-      const sNear = 20;
-      const sFar = Math.round(map.arenaHalfSize * 0.68);
-      const lampSpots: Array<{ x: number; z: number; rotY: number }> = [
-        { x: -4.4, z: -sNear, rotY: Math.PI / 2 },
-        { x: 4.4, z: -sFar, rotY: -Math.PI / 2 },
-        { x: -4.4, z: sFar, rotY: Math.PI / 2 },
-        { x: 4.4, z: sNear, rotY: -Math.PI / 2 },
-        { x: -sNear, z: -4.4, rotY: 0 },
-        { x: sNear, z: 4.4, rotY: Math.PI },
-        { x: -sFar, z: 4.4, rotY: Math.PI },
-        { x: sFar, z: -4.4, rotY: 0 },
-      ];
-      lampSpots.forEach((spot, idx) => {
-        if (Math.abs(spot.x) >= map.arenaHalfSize - 1.5 || Math.abs(spot.z) >= map.arenaHalfSize - 1.5) {
-          return;
-        }
-        const lamp = buildStreetLight(map.accentColor);
-        lamp.position.set(spot.x, 0, spot.z);
-        lamp.rotation.y = spot.rotY;
-        this.mapGroup.add(lamp);
-
-        // Add subtle warm light pools on 2 opposing lamps to stay well under light budget
-        if (idx === 0 || idx === 3) {
-          const poolLight = new THREE.PointLight(map.accentColor, 9, 24, 1.7);
-          poolLight.position.set(spot.x, 5.8, spot.z);
-          this.mapGroup.add(poolLight);
-        }
+    // Sandyard mid-building interior concrete slab + subtle team spawn markers
+    if (isSandyard && concreteTex) {
+      const midPadMat = new THREE.MeshStandardMaterial({
+        color: 0xd6d3d1,
+        map: concreteTex.map,
+        bumpMap: concreteTex.bumpMap,
+        bumpScale: 0.04,
+        roughness: 0.88,
+        metalness: 0.05,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
       });
+      const midPad = new THREE.Mesh(new THREE.PlaneGeometry(39.4, 47.4), midPadMat);
+      midPad.rotation.x = -Math.PI / 2;
+      midPad.position.set(0, 0.024, 0);
+      midPad.receiveShadow = true;
+      this.mapGroup.add(midPad);
     }
+
+    let streetLightPoolCount = 0;
 
     // Build Trees in open courtyard margins (clear of roads, spawns, and obstacles)
     if (map.hasTrees) {
@@ -1359,6 +1350,19 @@ export class ArenaEngine {
         this.mapGroup.add(buildHouseStructure(obs, facadeTex, map.accentColor));
       } else if (obs.kind === 'wood_crate') {
         this.mapGroup.add(buildWoodenCrate(obs, fallbackWoodTex.map, fallbackWoodTex.bumpMap));
+      } else if (obs.kind === 'box_pile') {
+        this.mapGroup.add(buildWoodenBoxPile(obs, fallbackWoodTex.map, fallbackWoodTex.bumpMap));
+      } else if (obs.kind === 'street_light') {
+        const lamp = buildStreetLight(map.accentColor, obs);
+        lamp.position.set(obs.x, obs.y, obs.z);
+        lamp.rotation.y = Math.atan2(-obs.x, -obs.z);
+        this.mapGroup.add(lamp);
+        if (!map.isDaylight && streetLightPoolCount < 2) {
+          streetLightPoolCount += 1;
+          const poolLight = new THREE.PointLight(map.accentColor, 9, 24, 1.7);
+          poolLight.position.set(obs.x, Math.max(5.2, obs.h - 0.6), obs.z);
+          this.mapGroup.add(poolLight);
+        }
       } else if (obs.kind === 'concrete_wall') {
         this.mapGroup.add(buildConcreteWall(obs, fallbackConcreteTex.map, fallbackConcreteTex.bumpMap));
       } else if (obs.kind === 'building_wall') {

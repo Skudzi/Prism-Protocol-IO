@@ -93,6 +93,8 @@ export interface MapObstacle {
     | 'rock'
     | 'crate'
     | 'wood_crate'
+    | 'box_pile'
+    | 'street_light'
     | 'concrete_wall'
     | 'building_wall'
     | 'building_floor'

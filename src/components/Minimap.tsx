@@ -112,6 +112,10 @@ export const Minimap: React.FC<MinimapProps> = ({ data, lang }) => {
           const fill =
             obs.kind === 'wood_crate'
               ? '#9a673a'
+              : obs.kind === 'box_pile'
+              ? '#7c4a21'
+              : obs.kind === 'street_light'
+              ? '#facc15'
               : obs.kind === 'concrete_wall'
               ? '#94a3b8'
               : obs.kind === 'sandstone_wall'

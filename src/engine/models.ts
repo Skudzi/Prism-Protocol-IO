@@ -805,13 +805,18 @@ export function buildJumpPad(accentHex: string): {
   return { group, ring };
 }
 
-export function buildStreetLight(accentHex: string): THREE.Group {
+export function buildStreetLight(accentHex: string, obs?: MapObstacle): THREE.Group {
   const group = new THREE.Group();
 
   const poleMat = new THREE.MeshStandardMaterial({
     color: 0x1e293b,
     metalness: 0.85,
     roughness: 0.3,
+  });
+  const collarMat = new THREE.MeshStandardMaterial({
+    color: 0x334155,
+    metalness: 0.72,
+    roughness: 0.38,
   });
   const lampMat = new THREE.MeshStandardMaterial({
     color: 0xfef3c7,
@@ -820,25 +825,39 @@ export function buildStreetLight(accentHex: string): THREE.Group {
     roughness: 0.15,
   });
 
-  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.32, 0.55, 10), poleMat);
-  plinth.position.y = 0.275;
+  const baseW = obs ? Math.max(0.65, obs.w * 0.94) : 0.75;
+  const baseD = obs ? Math.max(0.65, obs.d * 0.94) : 0.75;
+  const totalH = obs ? Math.max(5.5, obs.h) : 6.4;
+
+  const plinth = new THREE.Mesh(new THREE.BoxGeometry(baseW, 0.75, baseD), poleMat);
+  plinth.position.y = 0.375;
+  plinth.castShadow = true;
+  plinth.receiveShadow = true;
   group.add(plinth);
 
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, 6.2, 10), poleMat);
-  pole.position.y = 3.35;
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.34, 0.45, 10), collarMat);
+  collar.position.y = 0.975;
+  collar.castShadow = true;
+  group.add(collar);
+
+  const poleH = Math.max(4.0, totalH - 1.0);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, poleH, 10), poleMat);
+  pole.position.y = 1.0 + poleH * 0.5;
   pole.castShadow = true;
+  pole.receiveShadow = true;
   group.add(pole);
 
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 1.6), poleMat);
-  arm.position.set(0, 6.3, 0.72);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 1.75), poleMat);
+  arm.position.set(0, totalH - 0.1, 0.82);
+  arm.castShadow = true;
   group.add(arm);
 
-  const housing = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.12, 0.55), poleMat);
-  housing.position.set(0, 6.26, 1.4);
+  const housing = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.16, 0.68), poleMat);
+  housing.position.set(0, totalH - 0.14, 1.55);
   group.add(housing);
 
-  const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.06, 0.44), lampMat);
-  bulb.position.set(0, 6.18, 1.4);
+  const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.08, 0.54), lampMat);
+  bulb.position.set(0, totalH - 0.24, 1.55);
   group.add(bulb);
 
   return group;
@@ -1721,4 +1740,89 @@ export function buildSquarePlatform(
 
   return group;
 }
+
+export function buildWoodenBoxPile(
+  obs: MapObstacle,
+  woodTex: THREE.Texture,
+  woodBump: THREE.Texture
+): THREE.Group {
+  const group = new THREE.Group();
+  group.position.set(obs.x, obs.y, obs.z);
+
+  const plankMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: woodTex,
+    bumpMap: woodBump,
+    bumpScale: 0.045,
+    roughness: 0.88,
+    metalness: 0.03,
+  });
+  const darkPlankMat = new THREE.MeshStandardMaterial({
+    color: 0xb98a57,
+    map: woodTex,
+    bumpMap: woodBump,
+    bumpScale: 0.04,
+    roughness: 0.9,
+    metalness: 0.02,
+  });
+  const frameMat = new THREE.MeshStandardMaterial({
+    color: 0x4d3017,
+    roughness: 0.92,
+    metalness: 0.04,
+  });
+
+  // Build a house-sized stacked cluster of 11 varied wooden boxes inside [obs.w x obs.h x obs.d]
+  const w = obs.w;
+  const h = obs.h;
+  const d = obs.d;
+
+  const subBoxes: Array<{
+    ox: number;
+    oy: number;
+    oz: number;
+    bw: number;
+    bh: number;
+    bd: number;
+    rotY?: number;
+    dark?: boolean;
+  }> = [
+    // Tier 1: Solid heavy base footprint (blocks sightlines & matches collision envelope cleanly)
+    { ox: -w * 0.25, oy: 0, oz: -d * 0.24, bw: w * 0.49, bh: h * 0.42, bd: d * 0.5 },
+    { ox: w * 0.24, oy: 0, oz: -d * 0.23, bw: w * 0.5, bh: h * 0.38, bd: d * 0.52, dark: true },
+    { ox: -w * 0.24, oy: 0, oz: d * 0.25, bw: w * 0.5, bh: h * 0.4, bd: d * 0.48, dark: true },
+    { ox: w * 0.25, oy: 0, oz: d * 0.24, bw: w * 0.48, bh: h * 0.44, bd: d * 0.5 },
+    // Tier 2: Mid-height offset boxes creating house-like silhouette
+    { ox: -w * 0.16, oy: h * 0.4, oz: -d * 0.06, bw: w * 0.48, bh: h * 0.32, bd: d * 0.48, rotY: 0.06 },
+    { ox: w * 0.2, oy: h * 0.38, oz: d * 0.14, bw: w * 0.42, bh: h * 0.3, bd: d * 0.44, rotY: -0.08, dark: true },
+    { ox: w * 0.18, oy: h * 0.38, oz: -d * 0.22, bw: w * 0.36, bh: h * 0.26, bd: d * 0.34, rotY: 0.1 },
+    { ox: -w * 0.22, oy: h * 0.4, oz: d * 0.22, bw: w * 0.34, bh: h * 0.24, bd: d * 0.32, rotY: -0.12 },
+    // Tier 3: Crown peak boxes
+    { ox: -w * 0.04, oy: h * 0.72, oz: -d * 0.04, bw: w * 0.42, bh: h * 0.28, bd: d * 0.4, rotY: -0.14 },
+    { ox: w * 0.14, oy: h * 0.68, oz: d * 0.12, bw: w * 0.26, bh: h * 0.2, bd: d * 0.26, rotY: 0.2, dark: true },
+    { ox: -w * 0.26, oy: h * 0.64, oz: d * 0.18, bw: w * 0.22, bh: h * 0.16, bd: d * 0.22, rotY: 0.08 },
+  ];
+
+  for (const b of subBoxes) {
+    const geo = new THREE.BoxGeometry(b.bw, b.bh, b.bd);
+    applyWorldBoxUVs(geo, b.bw, b.bh, b.bd, 1.8);
+    const box = new THREE.Mesh(geo, b.dark ? darkPlankMat : plankMat);
+    box.position.set(b.ox, b.oy + b.bh * 0.5, b.oz);
+    if (b.rotY) box.rotation.y = b.rotY;
+    box.castShadow = true;
+    box.receiveShadow = true;
+    group.add(box);
+
+    // Timber top trim border
+    const trim = new THREE.Mesh(
+      new THREE.BoxGeometry(b.bw + 0.04, 0.04, b.bd + 0.04),
+      frameMat
+    );
+    trim.position.set(b.ox, b.oy + b.bh + 0.02, b.oz);
+    if (b.rotY) trim.rotation.y = b.rotY;
+    group.add(trim);
+  }
+
+  return group;
+}
+
 

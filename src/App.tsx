@@ -1278,7 +1278,7 @@ export default function App() {
 
           <div
             data-testid="creator-attribution"
-            className="pointer-events-none fixed bottom-3 right-5 text-[11px] font-medium text-slate-700 dark:text-slate-300/90"
+            className="pointer-events-none fixed bottom-3 right-5 rounded-md bg-white/85 dark:bg-[#070B12]/80 px-2.5 py-1 text-[11px] font-medium text-slate-800 dark:text-slate-200 shadow-sm"
           >
             Creator Skudzi. All rights reserved (R)
           </div>
