@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDefaultProfile, DEFAULT_SETTINGS, MAPS, WEAPONS, WEAPON_SKINS } from './catalog';
+import { AVATAR_SKINS, createDefaultProfile, DEFAULT_SETTINGS, MAPS, WEAPONS, WEAPON_SKINS } from './catalog';
 import {
   applyControllerDeadzone,
   applyMatchRewards,
@@ -17,6 +17,7 @@ import {
   claimBattlePassTier,
   getHealOrbScheduleTimes,
   getKillRankReward,
+  getOperatorWeaponBodyStyle,
   MAX_MATCH_CREDITS,
   MAX_MATCH_XP,
   mergeLocalAndCloudProfiles,
@@ -451,7 +452,7 @@ test('pickRandomMapId selects valid maps and avoids immediate repeat when exclud
   }
 });
 
-test('Underfoot shot triggers +0.3x jump height boost and floor ray hit', () => {
+test('Underfoot shot push triggers ONLY with Shotgun (volt_scatter) +0.3x jump height boost', () => {
   const map = MAPS.hyperion_atrium;
   const downHit = castLaserRay(
     { x: 10, y: 1.56, z: 10 },
@@ -463,10 +464,13 @@ test('Underfoot shot triggers +0.3x jump height boost and floor ray hit', () => 
   assert.equal(downHit.hitType, 'obstacle');
   assert.ok(Math.abs(downHit.distance - 1.56) < 1e-4);
 
-  assert.equal(canTriggerUnderfootJump(-0.95, downHit.distance, 0), true);
-  assert.equal(canTriggerUnderfootJump(-0.95, downHit.distance, 120), false);
-  assert.equal(canTriggerUnderfootJump(-0.2, downHit.distance, 0), false);
-  assert.equal(canTriggerUnderfootJump(-0.95, 6.0, 0), false);
+  assert.equal(canTriggerUnderfootJump(-0.95, downHit.distance, 0, 'volt_scatter'), true);
+  assert.equal(canTriggerUnderfootJump(-0.95, downHit.distance, 0, 'pulse_carbine'), false);
+  assert.equal(canTriggerUnderfootJump(-0.95, downHit.distance, 0, 'helios_rail'), false);
+  assert.equal(canTriggerUnderfootJump(-0.95, downHit.distance, 0, 'arc_repeater'), false);
+  assert.equal(canTriggerUnderfootJump(-0.95, downHit.distance, 120, 'volt_scatter'), false);
+  assert.equal(canTriggerUnderfootJump(-0.2, downHit.distance, 0, 'volt_scatter'), false);
+  assert.equal(canTriggerUnderfootJump(-0.95, 6.0, 0, 'volt_scatter'), false);
 
   const launchedVelY = applyUnderfootJumpVelocity(0);
   assert.equal(launchedVelY, UNDERFOOT_JUMP_VELOCITY);
@@ -764,3 +768,34 @@ test('sampleKillCamClip interpolates attacker perspective smoothly over the 3-se
   assert.ok(end);
   assert.ok(Math.abs(end.attackerX - 6) < 1e-5);
 });
+
+test('Weapon-specific operator body styles preserve player skin colors while changing body type & Shotgun satin vest', () => {
+  const crimson = AVATAR_SKINS.find((s) => s.id === 'crimson_striker')!;
+  assert.ok(crimson);
+
+  const arStyle = getOperatorWeaponBodyStyle('pulse_carbine', crimson);
+  assert.equal(arStyle.bodyType, 'assault_commando');
+  assert.equal(arStyle.hasAssaultGear, true);
+  assert.equal(arStyle.isFemaleBody, false);
+
+  const shotgunStyle = getOperatorWeaponBodyStyle('volt_scatter', crimson);
+  assert.equal(shotgunStyle.bodyType, 'shotgun_breacher');
+  assert.equal(shotgunStyle.hasBreacherVest, true);
+  // Light red vest tint on Crimson Striker, plus crimson satin body without blinding glare
+  const rVest = Number.parseInt(shotgunStyle.vestColorHex.slice(1, 3), 16);
+  const gVest = Number.parseInt(shotgunStyle.vestColorHex.slice(3, 5), 16);
+  const rArmor = Number.parseInt(shotgunStyle.armorColorHex.slice(1, 3), 16);
+  const gArmor = Number.parseInt(shotgunStyle.armorColorHex.slice(3, 5), 16);
+  assert.ok(rVest >= 235 && gVest >= 120 && gVest < rVest, `Expected light red vest, got ${shotgunStyle.vestColorHex}`);
+  assert.ok(rArmor > gArmor * 2, `Expected crimson armor hue, got ${shotgunStyle.armorColorHex}`);
+  assert.ok(shotgunStyle.armorRoughness >= 0.24 && shotgunStyle.armorMetalness <= 0.52, 'Shotgun finish must stay satin rather than blinding mirror glare');
+
+  const sniperStyle = getOperatorWeaponBodyStyle('helios_rail', crimson);
+  assert.equal(sniperStyle.bodyType, 'sniper_marksman');
+  assert.equal(sniperStyle.hasFeatherHat, true);
+
+  const smgStyle = getOperatorWeaponBodyStyle('arc_repeater', crimson);
+  assert.equal(smgStyle.bodyType, 'smg_woman');
+  assert.equal(smgStyle.isFemaleBody, true);
+});
+

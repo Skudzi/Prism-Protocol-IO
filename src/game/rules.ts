@@ -6,6 +6,7 @@ import {
   WEAPON_SKINS,
 } from './catalog';
 import {
+  AvatarSkinDef,
   HealOrbState,
   MapDef,
   MapId,
@@ -65,9 +66,15 @@ export const UNDERFOOT_JUMP_VELOCITY = NORMAL_JUMP_VELOCITY * Math.sqrt(1.3);
 export function canTriggerUnderfootJump(
   dirY: number,
   hitDistance: number,
-  cooldownMsRemaining: number
+  cooldownMsRemaining: number,
+  weaponId: WeaponId = 'volt_scatter'
 ): boolean {
-  return cooldownMsRemaining <= 0 && dirY <= -0.65 && hitDistance <= 3.8;
+  return (
+    weaponId === 'volt_scatter' &&
+    cooldownMsRemaining <= 0 &&
+    dirY <= -0.65 &&
+    hitDistance <= 3.8
+  );
 }
 
 export function applyUnderfootJumpVelocity(currentVelY: number): number {
@@ -803,3 +810,135 @@ export function sortLeaderboardEntries(
     return a.nickname.localeCompare(b.nickname);
   });
 }
+
+export type OperatorBodyType =
+  | 'assault_commando'
+  | 'shotgun_breacher'
+  | 'sniper_marksman'
+  | 'smg_woman';
+
+export interface OperatorWeaponBodyStyle {
+  bodyType: OperatorBodyType;
+  isFemaleBody: boolean;
+  hasFeatherHat: boolean;
+  hasBreacherVest: boolean;
+  hasAssaultGear: boolean;
+  armorColorHex: string;
+  clothingColorHex: string;
+  vestColorHex: string;
+  armorMetalness: number;
+  armorRoughness: number;
+  armorClearcoat: number;
+  armorClearcoatRoughness: number;
+  clothMetalness: number;
+  clothRoughness: number;
+}
+
+function parseHexRgb(hex: string): [number, number, number] {
+  const clean = hex.replace('#', '').trim();
+  const full =
+    clean.length === 3
+      ? `${clean[0]}${clean[0]}${clean[1]}${clean[1]}${clean[2]}${clean[2]}`
+      : clean;
+  const num = Number.parseInt(full, 16);
+  if (!Number.isFinite(num)) return [128, 128, 128];
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+}
+
+export function blendHexColors(hexA: string, hexB: string, t: number): string {
+  const ratio = Math.min(1, Math.max(0, t));
+  const [r1, g1, b1] = parseHexRgb(hexA);
+  const [r2, g2, b2] = parseHexRgb(hexB);
+  const toHex = (v: number) =>
+    Math.round(Math.min(255, Math.max(0, v)))
+      .toString(16)
+      .padStart(2, '0');
+  return `#${toHex(r1 + (r2 - r1) * ratio)}${toHex(g1 + (g2 - g1) * ratio)}${toHex(
+    b1 + (b2 - b1) * ratio
+  )}`;
+}
+
+export function getOperatorWeaponBodyStyle(
+  weaponId: WeaponId,
+  skin: AvatarSkinDef
+): OperatorWeaponBodyStyle {
+  if (weaponId === 'volt_scatter') {
+    const richSkinBody = blendHexColors(skin.clothingColor, skin.trimColor, 0.52);
+    const shinyArmor = blendHexColors(skin.armorColor, richSkinBody, 0.78);
+    const shinyCloth = blendHexColors(skin.clothingColor, skin.trimColor, 0.44);
+    const lightVest = blendHexColors(skin.trimColor, '#ffffff', 0.38);
+    return {
+      bodyType: 'shotgun_breacher',
+      isFemaleBody: false,
+      hasFeatherHat: false,
+      hasBreacherVest: true,
+      hasAssaultGear: false,
+      armorColorHex: shinyArmor,
+      clothingColorHex: shinyCloth,
+      vestColorHex: lightVest,
+      // Satin-gloss metallic finish: catches light richly without blinding glare
+      armorMetalness: 0.44,
+      armorRoughness: 0.28,
+      armorClearcoat: 0.52,
+      armorClearcoatRoughness: 0.26,
+      clothMetalness: 0.26,
+      clothRoughness: 0.36,
+    };
+  }
+
+  if (weaponId === 'helios_rail') {
+    return {
+      bodyType: 'sniper_marksman',
+      isFemaleBody: false,
+      hasFeatherHat: true,
+      hasBreacherVest: false,
+      hasAssaultGear: false,
+      armorColorHex: skin.armorColor,
+      clothingColorHex: skin.clothingColor,
+      vestColorHex: skin.armorColor,
+      armorMetalness: 0.56,
+      armorRoughness: 0.38,
+      armorClearcoat: 0.42,
+      armorClearcoatRoughness: 0.22,
+      clothMetalness: 0.08,
+      clothRoughness: 0.86,
+    };
+  }
+
+  if (weaponId === 'arc_repeater') {
+    return {
+      bodyType: 'smg_woman',
+      isFemaleBody: true,
+      hasFeatherHat: false,
+      hasBreacherVest: false,
+      hasAssaultGear: false,
+      armorColorHex: skin.armorColor,
+      clothingColorHex: skin.clothingColor,
+      vestColorHex: skin.armorColor,
+      armorMetalness: 0.62,
+      armorRoughness: 0.32,
+      armorClearcoat: 0.56,
+      armorClearcoatRoughness: 0.18,
+      clothMetalness: 0.08,
+      clothRoughness: 0.82,
+    };
+  }
+
+  return {
+    bodyType: 'assault_commando',
+    isFemaleBody: false,
+    hasFeatherHat: false,
+    hasBreacherVest: false,
+    hasAssaultGear: true,
+    armorColorHex: skin.armorColor,
+    clothingColorHex: skin.clothingColor,
+    vestColorHex: skin.armorColor,
+    armorMetalness: 0.64,
+    armorRoughness: 0.34,
+    armorClearcoat: 0.58,
+    armorClearcoatRoughness: 0.16,
+    clothMetalness: 0.08,
+    clothRoughness: 0.84,
+  };
+}
+

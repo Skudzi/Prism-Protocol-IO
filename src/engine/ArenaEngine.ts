@@ -124,6 +124,7 @@ interface BotEntity {
   nickname: string;
   team: 'cyan' | 'amber';
   policy: 'flanker' | 'kiter' | 'charger' | 'patroller' | 'drone';
+  weaponId: WeaponId;
   x: number;
   y: number;
   z: number;
@@ -1426,14 +1427,22 @@ export class ArenaEngine {
 
     if (isTutorial) {
       const dronePositions = [
-        { x: -3.5, y: 0, z: 21.5 },
-        { x: 0, y: 0, z: 20.5 },
-        { x: 3.5, y: 0, z: 21.5 },
+        { x: -3.5, y: 0, z: 21.5, weaponId: 'pulse_carbine' as WeaponId },
+        { x: 0, y: 0, z: 20.5, weaponId: 'volt_scatter' as WeaponId },
+        { x: 3.5, y: 0, z: 21.5, weaponId: 'helios_rail' as WeaponId },
       ];
       dronePositions.forEach((p, idx) => {
         const skin = AVATAR_SKINS[idx % AVATAR_SKINS.length];
         const name = `Holo-Drone 0${idx + 1}`;
-        const rig = buildAvatarRig(skin, '#ef4444', this.shadowTex, 'enemy', name);
+        const rig = buildAvatarRig(
+          skin,
+          '#ef4444',
+          this.shadowTex,
+          'enemy',
+          name,
+          p.weaponId,
+          0
+        );
         rig.group.position.set(p.x, p.y, p.z);
         rig.group.rotation.y = 0;
         this.botsGroup.add(rig.group);
@@ -1442,6 +1451,7 @@ export class ArenaEngine {
           nickname: name,
           team: 'amber',
           policy: 'drone',
+          weaponId: p.weaponId,
           x: p.x,
           y: p.y,
           z: p.z,
@@ -1474,24 +1484,26 @@ export class ArenaEngine {
       name: string;
       team: 'cyan' | 'amber';
       policy: BotEntity['policy'];
+      weaponId: WeaponId;
       skinIdx: number;
       spawnIdx: number;
     }> =
       this.gameMode === 'tdm'
         ? [
-            { name: 'AstraAlly', team: 'cyan', policy: 'flanker', skinIdx: 0, spawnIdx: 1 },
-            { name: 'PulseAlly', team: 'cyan', policy: 'charger', skinIdx: 2, spawnIdx: 2 },
-            { name: 'RiftBot', team: 'amber', policy: 'flanker', skinIdx: 1, spawnIdx: 0 },
-            { name: 'VexUnit', team: 'amber', policy: 'kiter', skinIdx: 3, spawnIdx: 1 },
-            { name: 'ApexFrame', team: 'amber', policy: 'charger', skinIdx: 4, spawnIdx: 2 },
+            { name: 'AstraAlly', team: 'cyan', policy: 'flanker', weaponId: 'arc_repeater', skinIdx: 0, spawnIdx: 1 },
+            { name: 'PulseAlly', team: 'cyan', policy: 'charger', weaponId: 'volt_scatter', skinIdx: 1, spawnIdx: 2 },
+            { name: 'RiftBot', team: 'amber', policy: 'flanker', weaponId: 'arc_repeater', skinIdx: 4, spawnIdx: 0 },
+            { name: 'VexUnit', team: 'amber', policy: 'kiter', weaponId: 'helios_rail', skinIdx: 3, spawnIdx: 1 },
+            { name: 'ApexFrame', team: 'amber', policy: 'charger', weaponId: 'pulse_carbine', skinIdx: 2, spawnIdx: 2 },
           ]
         : [
-            { name: 'RiftBot', team: 'amber', policy: 'flanker', skinIdx: 1, spawnIdx: 1 },
-            { name: 'VexUnit', team: 'amber', policy: 'kiter', skinIdx: 2, spawnIdx: 2 },
-            { name: 'ApexFrame', team: 'amber', policy: 'charger', skinIdx: 3, spawnIdx: 3 },
-            { name: 'HelixAI', team: 'amber', policy: 'patroller', skinIdx: 4, spawnIdx: 4 },
+            { name: 'RiftBot', team: 'amber', policy: 'flanker', weaponId: 'arc_repeater', skinIdx: 4, spawnIdx: 1 },
+            { name: 'VexUnit', team: 'amber', policy: 'kiter', weaponId: 'helios_rail', skinIdx: 3, spawnIdx: 2 },
+            { name: 'ApexFrame', team: 'amber', policy: 'charger', weaponId: 'volt_scatter', skinIdx: 1, spawnIdx: 3 },
+            { name: 'HelixAI', team: 'amber', policy: 'patroller', weaponId: 'pulse_carbine', skinIdx: 0, spawnIdx: 4 },
           ];
 
+    let allyStencilCounter = 0;
     for (const cfg of botConfigs) {
       const sp =
         this.gameMode === 'tdm'
@@ -1500,8 +1512,17 @@ export class ArenaEngine {
       const skin = AVATAR_SKINS[cfg.skinIdx % AVATAR_SKINS.length];
       const relation: 'ally' | 'enemy' =
         this.gameMode === 'tdm' && cfg.team === 'cyan' ? 'ally' : 'enemy';
+      const allyIdx = relation === 'ally' ? allyStencilCounter++ : 0;
       const teamGlow = relation === 'ally' ? '#3b82f6' : '#ef4444';
-      const rig = buildAvatarRig(skin, teamGlow, this.shadowTex, relation, cfg.name);
+      const rig = buildAvatarRig(
+        skin,
+        teamGlow,
+        this.shadowTex,
+        relation,
+        cfg.name,
+        cfg.weaponId,
+        allyIdx
+      );
       rig.group.position.set(sp.x, sp.y, sp.z);
       this.botsGroup.add(rig.group);
 
@@ -1510,6 +1531,7 @@ export class ArenaEngine {
         nickname: cfg.name,
         team: cfg.team,
         policy: cfg.policy,
+        weaponId: cfg.weaponId,
         x: sp.x,
         y: sp.y,
         z: sp.z,
@@ -1558,11 +1580,17 @@ export class ArenaEngine {
       }
     }
 
+    let remoteAllyCounter = 20;
     for (const peer of peers) {
       const relation: 'ally' | 'enemy' =
         this.gameMode === 'tdm' && peer.team === 'cyan' ? 'ally' : 'enemy';
       let existing = this.peerMeshes.get(peer.id);
-      if (existing && existing.relation !== relation) {
+      if (
+        existing &&
+        (existing.relation !== relation ||
+          existing.data.weaponId !== peer.weaponId ||
+          existing.data.avatarSkinId !== peer.avatarSkinId)
+      ) {
         this.peersGroup.remove(existing.rig.group);
         disposeAvatarRig(existing.rig);
         this.peerMeshes.delete(peer.id);
@@ -1572,14 +1600,23 @@ export class ArenaEngine {
         const skin =
           AVATAR_SKINS.find((a) => a.id === peer.avatarSkinId) ?? AVATAR_SKINS[0];
         const teamColor = relation === 'ally' ? '#3b82f6' : '#ef4444';
-        const rig = buildAvatarRig(skin, teamColor, this.shadowTex, relation, peer.nickname);
+        const allyIdx = relation === 'ally' ? remoteAllyCounter++ : 0;
+        const rig = buildAvatarRig(
+          skin,
+          teamColor,
+          this.shadowTex,
+          relation,
+          peer.nickname,
+          peer.weaponId,
+          allyIdx
+        );
         this.peersGroup.add(rig.group);
-        existing = { rig, walkPhase: 0, data: peer, relation };
+        existing = { rig, walkPhase: 0, data: { ...peer }, relation };
         this.peerMeshes.set(peer.id, existing);
       }
       const moved =
         Math.hypot(peer.x - existing.data.x, peer.z - existing.data.z) > 0.01;
-      existing.data = peer;
+      existing.data = { ...peer };
       existing.rig.group.visible = peer.alive;
       existing.rig.group.position.set(peer.x, peer.y, peer.z);
       existing.rig.group.rotation.y = peer.yaw + Math.PI;
@@ -1794,10 +1831,15 @@ export class ArenaEngine {
       this.spawnBeam(muzzlePos, hit.point, beamColor);
       this.spawnSparks(hit.point, hit.hitType === 'target' ? 14 : 6);
 
-      // Underfoot shot jump boost (+0.3x jump height) when firing downward near ground/cover
+      // Underfoot shot jump boost (+0.3x jump height) ONLY with Shotgun (volt_scatter)
       if (
         !underfootTriggered &&
-        canTriggerUnderfootJump(dir.y, hit.distance, this.underfootJumpCooldownMs)
+        canTriggerUnderfootJump(
+          dir.y,
+          hit.distance,
+          this.underfootJumpCooldownMs,
+          this.weaponId
+        )
       ) {
         this.playerVel.y = applyUnderfootJumpVelocity(this.playerVel.y);
         this.grounded = false;

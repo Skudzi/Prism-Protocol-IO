@@ -3,6 +3,7 @@ import { Check, Lock } from 'lucide-react';
 import { AVATAR_SKINS, WEAPON_LIST, WEAPON_SKINS } from '../game/catalog';
 import { LanguageCode, PlayerCloudProfile, WeaponId } from '../game/types';
 import { t } from '../i18n/translations';
+import { OperatorPreviewCanvas } from './OperatorPreviewCanvas';
 
 interface ArmoryPanelProps {
   profile: PlayerCloudProfile;
@@ -17,9 +18,12 @@ export const ArmoryPanel: React.FC<ArmoryPanelProps> = ({
   onEquipWeapon,
   onActionSkin,
 }) => {
+  const equippedAvatarSkin =
+    AVATAR_SKINS.find((s) => s.id === profile.equippedAvatarSkinId) ?? AVATAR_SKINS[0];
+
   return (
     <div className="space-y-6">
-      {/* Primary Loadouts */}
+      {/* Primary Loadouts + Live 3D Operator Body Preview */}
       <section>
         <div className="flex items-baseline justify-between">
           <h3 className="text-lg font-bold text-slate-900 dark:text-white">
@@ -29,43 +33,51 @@ export const ArmoryPanel: React.FC<ArmoryPanelProps> = ({
             {profile.credits} CR
           </span>
         </div>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {WEAPON_LIST.map((w) => {
-            const equipped = profile.equippedWeaponId === w.id;
-            return (
-              <div
-                key={w.id}
-                className={`rounded-lg border p-3.5 transition-colors ${
-                  equipped
-                    ? 'border-cyan-500 bg-cyan-500/10'
-                    : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold text-sm text-slate-900 dark:text-white">
-                    {t(lang, w.nameKey as Parameters<typeof t>[1])}
-                  </span>
+        <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-2">
+            {WEAPON_LIST.map((w) => {
+              const equipped = profile.equippedWeaponId === w.id;
+              return (
+                <div
+                  key={w.id}
+                  className={`flex flex-col justify-between rounded-lg border p-3.5 transition-colors ${
+                    equipped
+                      ? 'border-cyan-500 bg-cyan-500/10'
+                      : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-sm text-slate-900 dark:text-white">
+                        {t(lang, w.nameKey as Parameters<typeof t>[1])}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                      {t(lang, w.roleKey as Parameters<typeof t>[1])}
+                    </p>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                    <span>DMG {w.damage * w.pellets} · RNG {w.maxRange}m</span>
+                    <button
+                      type="button"
+                      onClick={() => onEquipWeapon(w.id)}
+                      className={`rounded px-2.5 py-1 text-xs font-semibold cursor-pointer ${
+                        equipped
+                          ? 'bg-cyan-500 text-slate-950'
+                          : 'bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {equipped ? t(lang, 'cta.equipped') : t(lang, 'cta.equip')}
+                    </button>
+                  </div>
                 </div>
-                <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                  {t(lang, w.roleKey as Parameters<typeof t>[1])}
-                </p>
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                  <span>DMG {w.damage * w.pellets} · RNG {w.maxRange}m</span>
-                  <button
-                    type="button"
-                    onClick={() => onEquipWeapon(w.id)}
-                    className={`rounded px-2.5 py-1 text-xs font-semibold cursor-pointer ${
-                      equipped
-                        ? 'bg-cyan-500 text-slate-950'
-                        : 'bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    {equipped ? t(lang, 'cta.equipped') : t(lang, 'cta.equip')}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+          <OperatorPreviewCanvas
+            weaponId={profile.equippedWeaponId}
+            avatarSkin={equippedAvatarSkin}
+          />
         </div>
       </section>
 

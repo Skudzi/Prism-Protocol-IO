@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getOperatorWeaponBodyStyle } from '../game/rules';
 import { AvatarSkinDef, MapObstacle, WeaponId, WeaponSkinDef } from '../game/types';
 import {
   createArmorPBRTextures,
@@ -17,7 +18,7 @@ export interface AnimatedAvatarRig {
   head: THREE.Group;
   outlineMat: THREE.MeshBasicMaterial;
   xrayMaskMat: THREE.MeshBasicMaterial | null;
-  xrayOutlineMat: THREE.MeshBasicMaterial | null;
+  xrayOutlineMat: THREE.Material | null;
   nametagSprite: THREE.Sprite | null;
   nametagTexture: THREE.CanvasTexture | null;
 }
@@ -348,9 +349,20 @@ export function buildWeaponViewModel(
   }
 
   // First-person Tactical Gloved Hands & Cordura Forearm Sleeves holding the weapon
+  const effectiveAvatarSkin: AvatarSkinDef = avatarSkin ?? {
+    id: 'vanguard_cyan',
+    name: 'Vanguard Cyan',
+    armorColor: '#1e293b',
+    clothingColor: '#334155',
+    trimColor: '#38bdf8',
+    visorColor: '#06b6d4',
+    price: 0,
+    unlockSource: 'starter',
+  };
+  const bodyStyle = getOperatorWeaponBodyStyle(weaponId, effectiveAvatarSkin);
   const sleevePbr = createArmorPBRTextures(
-    avatarSkin?.clothingColor ?? '#334155',
-    avatarSkin?.trimColor ?? '#38bdf8',
+    bodyStyle.clothingColorHex,
+    effectiveAvatarSkin.trimColor,
     'cloth'
   );
   const sleeveMat = new THREE.MeshStandardMaterial({
@@ -359,15 +371,15 @@ export function buildWeaponViewModel(
     bumpMap: sleevePbr.bumpMap,
     bumpScale: 0.01,
     roughnessMap: sleevePbr.roughnessMap,
-    roughness: 0.85,
-    metalness: 0.08,
+    roughness: bodyStyle.clothRoughness,
+    metalness: bodyStyle.clothMetalness,
   });
   const cuffMat = new THREE.MeshPhysicalMaterial({
-    color: avatarSkin?.armorColor ?? '#1e293b',
-    roughness: 0.34,
-    metalness: 0.68,
-    clearcoat: 0.55,
-    clearcoatRoughness: 0.18,
+    color: bodyStyle.armorColorHex,
+    roughness: bodyStyle.armorRoughness,
+    metalness: bodyStyle.armorMetalness,
+    clearcoat: bodyStyle.armorClearcoat,
+    clearcoatRoughness: bodyStyle.armorClearcoatRoughness,
   });
   const gloveMat = new THREE.MeshStandardMaterial({
     color: '#18181b',
@@ -378,11 +390,12 @@ export function buildWeaponViewModel(
     metalness: 0.14,
   });
   const wristStripMat = new THREE.MeshStandardMaterial({
-    color: avatarSkin?.visorColor ?? '#06b6d4',
-    emissive: avatarSkin?.visorColor ?? '#06b6d4',
+    color: effectiveAvatarSkin.visorColor,
+    emissive: effectiveAvatarSkin.visorColor,
     emissiveIntensity: 1.4,
     roughness: 0.2,
   });
+  const armSlim = bodyStyle.isFemaleBody ? 0.84 : 1.0;
 
   // Right hand + fingers gripping pistol grip + right forearm sleeve
   const rightGripPos =
@@ -403,7 +416,10 @@ export function buildWeaponViewModel(
   rightThumb.rotation.x = Math.PI / 2.2;
   group.add(rightThumb);
 
-  const rightCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.054, 0.08, 12), cuffMat);
+  const rightCuff = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.048 * armSlim, 0.054 * armSlim, 0.08, 12),
+    cuffMat
+  );
   rightCuff.position.set(rightGripPos.x + 0.045, rightGripPos.y - 0.05, rightGripPos.z + 0.095);
   rightCuff.rotation.set(0.96, 0, -0.24);
   group.add(rightCuff);
@@ -413,7 +429,10 @@ export function buildWeaponViewModel(
   rightStrip.rotation.set(0.96, 0, -0.24);
   group.add(rightStrip);
 
-  const rightForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.054, 0.072, 0.4, 12), sleeveMat);
+  const rightForearm = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.054 * armSlim, 0.072 * armSlim, 0.4, 12),
+    sleeveMat
+  );
   rightForearm.position.set(rightGripPos.x + 0.115, rightGripPos.y - 0.15, rightGripPos.z + 0.25);
   rightForearm.rotation.set(0.96, 0, -0.28);
   group.add(rightForearm);
@@ -426,11 +445,11 @@ export function buildWeaponViewModel(
       ? new THREE.Vector3(-0.015, -0.065, -0.14)
       : new THREE.Vector3(-0.015, -0.065, -0.17);
 
-  const leftPalm = new THREE.Mesh(new THREE.BoxGeometry(0.098, 0.076, 0.115), gloveMat);
+  const leftPalm = new THREE.Mesh(new THREE.BoxGeometry(0.098 * armSlim, 0.076, 0.115), gloveMat);
   leftPalm.position.set(leftSupportPos.x - 0.012, leftSupportPos.y, leftSupportPos.z);
   group.add(leftPalm);
 
-  const leftKnuckles = new THREE.Mesh(new THREE.BoxGeometry(0.102, 0.03, 0.072), cuffMat);
+  const leftKnuckles = new THREE.Mesh(new THREE.BoxGeometry(0.102 * armSlim, 0.03, 0.072), cuffMat);
   leftKnuckles.position.set(leftSupportPos.x - 0.028, leftSupportPos.y - 0.015, leftSupportPos.z);
   group.add(leftKnuckles);
 
@@ -439,12 +458,18 @@ export function buildWeaponViewModel(
   leftThumb.rotation.x = Math.PI / 2.2;
   group.add(leftThumb);
 
-  const leftCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.052, 0.08, 12), cuffMat);
+  const leftCuff = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.046 * armSlim, 0.052 * armSlim, 0.08, 12),
+    cuffMat
+  );
   leftCuff.position.set(leftSupportPos.x - 0.095, leftSupportPos.y - 0.052, leftSupportPos.z + 0.095);
   leftCuff.rotation.set(1.08, 0.35, 0.44);
   group.add(leftCuff);
 
-  const leftForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.072, 0.44, 12), sleeveMat);
+  const leftForearm = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.052 * armSlim, 0.072 * armSlim, 0.44, 12),
+    sleeveMat
+  );
   leftForearm.position.set(leftSupportPos.x - 0.225, leftSupportPos.y - 0.15, leftSupportPos.z + 0.25);
   leftForearm.rotation.set(1.08, 0.38, 0.5);
   group.add(leftForearm);
@@ -457,12 +482,15 @@ export function buildWeaponViewModel(
  */
 export function buildAvatarRig(
   skin: AvatarSkinDef,
-  teamColorHex: string,
+  _teamColorHex: string,
   shadowTexture: THREE.Texture,
   relation: 'ally' | 'enemy' = 'enemy',
-  nickname?: string
+  nickname?: string,
+  weaponId: WeaponId = 'pulse_carbine',
+  allyStencilIndex = 0
 ): AnimatedAvatarRig {
   const group = new THREE.Group();
+  const bodyStyle = getOperatorWeaponBodyStyle(weaponId, skin);
 
   const outlineMat = new THREE.MeshBasicMaterial({
     color: relation === 'ally' ? 0x38bdf8 : 0xef4444,
@@ -471,16 +499,25 @@ export function buildAvatarRig(
     fog: false,
   });
 
-  // Teammates (TDM allies) show normal realistic PBR armor in open sight and
-  // ONLY a crisp thin blue silhouette line around them when occluded behind walls/barriers.
+  // Teammates (TDM allies) render in their real customizable skin colors and get
+  // a crisp, hollow blue silhouette outline visible BOTH in open view AND through walls.
+  const allySlot = Math.max(0, allyStencilIndex) % 200;
+  const allyStencilRef = 10 + allySlot;
+  const maskRenderOrder = 100 + allySlot * 2;
+  const outlineRenderOrder = 101 + allySlot * 2;
+
   const xrayMaskMat =
     relation === 'ally'
       ? new THREE.MeshBasicMaterial({
+          side: THREE.DoubleSide,
           colorWrite: false,
           depthWrite: false,
           depthTest: false,
+          transparent: true,
+          opacity: 1,
           stencilWrite: true,
-          stencilRef: 1,
+          stencilWriteMask: 0xff,
+          stencilRef: allyStencilRef,
           stencilFunc: THREE.AlwaysStencilFunc,
           stencilFail: THREE.ReplaceStencilOp,
           stencilZFail: THREE.ReplaceStencilOp,
@@ -490,58 +527,77 @@ export function buildAvatarRig(
 
   const xrayOutlineMat =
     relation === 'ally'
-      ? new THREE.MeshBasicMaterial({
-          color: 0x38bdf8,
-          side: THREE.BackSide,
+      ? new THREE.ShaderMaterial({
+          side: THREE.DoubleSide,
           transparent: true,
-          opacity: 0.92,
-          depthTest: true,
-          depthFunc: THREE.GreaterDepth,
+          depthTest: false,
           depthWrite: false,
-          stencilWrite: false,
+          stencilWrite: true,
+          stencilWriteMask: 0x00,
           stencilFunc: THREE.NotEqualStencilFunc,
-          stencilRef: 1,
+          stencilFuncMask: 0xff,
+          stencilRef: allyStencilRef,
+          stencilFail: THREE.KeepStencilOp,
+          stencilZFail: THREE.KeepStencilOp,
+          stencilZPass: THREE.KeepStencilOp,
           toneMapped: false,
           fog: false,
+          vertexShader: /* glsl */ `
+            void main() {
+              vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+              vec4 mvCenter = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+              float dist = max(1.5, -mvCenter.z);
+              float pad = clamp(dist * 0.0038, 0.036, 0.24);
+              vec3 outDir = mvPos.xyz - mvCenter.xyz;
+              float outLen = length(outDir);
+              if (outLen > 0.0001) {
+                mvPos.xyz += (outDir / outLen) * pad;
+              }
+              gl_Position = projectionMatrix * mvPos;
+            }
+          `,
+          fragmentShader: /* glsl */ `
+            void main() {
+              gl_FragColor = vec4(0.22, 0.74, 0.98, 0.96);
+            }
+          `,
         })
       : null;
 
   const addOutlineShell = (
     parent: THREE.Object3D,
     sourceMesh: THREE.Mesh,
-    _sx = 1.05,
-    _sy = 1.03,
-    _sz = 1.05
+    _padMeters = 0.036
   ) => {
     if (relation !== 'ally' || !xrayMaskMat || !xrayOutlineMat) {
       return;
     }
 
-    const mask = new THREE.Mesh(sourceMesh.geometry, xrayMaskMat);
+    const geo = sourceMesh.geometry;
+
+    const mask = new THREE.Mesh(geo, xrayMaskMat);
     mask.position.copy(sourceMesh.position);
     mask.rotation.copy(sourceMesh.rotation);
     mask.scale.copy(sourceMesh.scale);
-    mask.renderOrder = 8;
+    mask.renderOrder = maskRenderOrder;
     mask.castShadow = false;
     mask.receiveShadow = false;
+    mask.frustumCulled = false;
     parent.add(mask);
 
-    const xrayShell = new THREE.Mesh(sourceMesh.geometry, xrayOutlineMat);
+    const xrayShell = new THREE.Mesh(geo, xrayOutlineMat);
     xrayShell.position.copy(sourceMesh.position);
     xrayShell.rotation.copy(sourceMesh.rotation);
-    xrayShell.scale.set(
-      sourceMesh.scale.x * 1.045,
-      sourceMesh.scale.y * 1.028,
-      sourceMesh.scale.z * 1.045
-    );
-    xrayShell.renderOrder = 9;
+    xrayShell.scale.copy(sourceMesh.scale);
+    xrayShell.renderOrder = outlineRenderOrder;
     xrayShell.castShadow = false;
     xrayShell.receiveShadow = false;
+    xrayShell.frustumCulled = false;
     parent.add(xrayShell);
   };
 
-  const clothPbr = createArmorPBRTextures(skin.clothingColor, skin.trimColor, 'cloth');
-  const armorPbr = createArmorPBRTextures(skin.armorColor, skin.trimColor, 'armor');
+  const clothPbr = createArmorPBRTextures(bodyStyle.clothingColorHex, skin.trimColor, 'cloth');
+  const armorPbr = createArmorPBRTextures(bodyStyle.armorColorHex, skin.trimColor, 'armor');
 
   const clothMat = new THREE.MeshStandardMaterial({
     color: 0xffffff,
@@ -549,8 +605,8 @@ export function buildAvatarRig(
     bumpMap: clothPbr.bumpMap,
     bumpScale: 0.012,
     roughnessMap: clothPbr.roughnessMap,
-    roughness: 0.84,
-    metalness: 0.08,
+    roughness: bodyStyle.clothRoughness,
+    metalness: bodyStyle.clothMetalness,
   });
   const armorMat = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
@@ -558,17 +614,17 @@ export function buildAvatarRig(
     bumpMap: armorPbr.bumpMap,
     bumpScale: 0.015,
     roughnessMap: armorPbr.roughnessMap,
-    metalness: 0.62,
-    roughness: 0.34,
-    clearcoat: 0.58,
-    clearcoatRoughness: 0.16,
+    metalness: bodyStyle.armorMetalness,
+    roughness: bodyStyle.armorRoughness,
+    clearcoat: bodyStyle.armorClearcoat,
+    clearcoatRoughness: bodyStyle.armorClearcoatRoughness,
   });
   const trimMat = new THREE.MeshPhysicalMaterial({
     color: skin.trimColor,
-    metalness: 0.86,
-    roughness: 0.2,
-    clearcoat: 0.72,
-    clearcoatRoughness: 0.14,
+    metalness: bodyStyle.hasBreacherVest ? 0.52 : 0.84,
+    roughness: bodyStyle.hasBreacherVest ? 0.28 : 0.22,
+    clearcoat: 0.62,
+    clearcoatRoughness: 0.18,
   });
   const visorMat = new THREE.MeshPhysicalMaterial({
     color: skin.visorColor,
@@ -578,12 +634,6 @@ export function buildAvatarRig(
     metalness: 0.25,
     clearcoat: 1.0,
     clearcoatRoughness: 0.04,
-  });
-  const teamGlowMat = new THREE.MeshStandardMaterial({
-    color: teamColorHex,
-    emissive: teamColorHex,
-    emissiveIntensity: 1.35,
-    roughness: 0.2,
   });
 
   // Ground contact shadow
@@ -600,32 +650,46 @@ export function buildAvatarRig(
   shadow.position.y = 0.015;
   group.add(shadow);
 
+  // Proportions tailored per weapon body type
+  const isWoman = bodyStyle.isFemaleBody;
+  const hipSpacing = isWoman ? 0.13 : 0.145;
+  const thighR = isWoman ? 0.082 : 0.098;
+  const shinR = isWoman ? 0.068 : 0.082;
+  const shoulderX = isWoman ? 0.255 : bodyStyle.hasAssaultGear ? 0.36 : 0.345;
+  const armRadius = isWoman ? 0.054 : 0.07;
+
   // Articulated Left & Right Legs (hip pivot at y = 0.88)
   const makeLeg = (side: -1 | 1): THREE.Group => {
     const legPivot = new THREE.Group();
-    legPivot.position.set(side * 0.14, 0.88, 0);
+    legPivot.position.set(side * hipSpacing, 0.88, 0);
 
-    const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.095, 0.24, 6, 12), clothMat);
+    const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(thighR, 0.24, 6, 12), clothMat);
     thigh.position.y = -0.2;
     thigh.castShadow = true;
     legPivot.add(thigh);
-    addOutlineShell(legPivot, thigh, 1.22, 1.07, 1.22);
+    addOutlineShell(legPivot, thigh);
 
-    const shin = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.26, 6, 12), armorMat);
+    const shin = new THREE.Mesh(new THREE.CapsuleGeometry(shinR, 0.26, 6, 12), armorMat);
     shin.position.y = -0.55;
     shin.castShadow = true;
     legPivot.add(shin);
-    addOutlineShell(legPivot, shin, 1.24, 1.07, 1.24);
+    addOutlineShell(legPivot, shin);
 
-    const kneePad = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 10), trimMat);
+    const kneePad = new THREE.Mesh(
+      new THREE.SphereGeometry(isWoman ? 0.072 : 0.086, 10, 10),
+      trimMat
+    );
     kneePad.position.set(0, -0.38, 0.05);
     legPivot.add(kneePad);
 
-    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.27), armorMat);
+    const boot = new THREE.Mesh(
+      new THREE.BoxGeometry(isWoman ? 0.135 : 0.165, 0.12, isWoman ? 0.24 : 0.27),
+      armorMat
+    );
     boot.position.set(0, -0.82, 0.04);
     boot.castShadow = true;
     legPivot.add(boot);
-    addOutlineShell(legPivot, boot, 1.2, 1.22, 1.14);
+    addOutlineShell(legPivot, boot);
 
     return legPivot;
   };
@@ -639,108 +703,376 @@ export function buildAvatarRig(
   torso.position.set(0, 0.92, 0);
   group.add(torso);
 
-  // Tactical Jacket / Torso + Vest Harness (relative to torso y = 0.92)
-  const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.23, 0.1, 14), armorMat);
-  belt.position.y = 0;
-  torso.add(belt);
+  if (isWoman) {
+    // Woman Operator (SMG): sculpted pelvis/hips, narrow cinched waist, contoured bust chest
+    const hipCurve = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.188, 0.168, 0.17, 16),
+      armorMat
+    );
+    hipCurve.scale.set(1.16, 1, 0.86);
+    hipCurve.position.y = 0.04;
+    torso.add(hipCurve);
+    addOutlineShell(torso, hipCurve);
 
-  const jacket = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.23, 0.52, 14), clothMat);
-  jacket.scale.set(1.1, 1, 0.78);
-  jacket.position.y = 0.3;
-  jacket.castShadow = true;
-  torso.add(jacket);
-  addOutlineShell(torso, jacket, 1.12, 1.07, 1.13);
+    const waistFlare = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.142, 0.19, 0.12, 16),
+      clothMat
+    );
+    waistFlare.scale.set(1.1, 1, 0.82);
+    waistFlare.position.y = 0.15;
+    torso.add(waistFlare);
+    addOutlineShell(torso, waistFlare);
 
-  // Vest armor chest plate
-  const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.38, 0.34), armorMat);
-  chestPlate.position.set(0, 0.33, 0.01);
-  chestPlate.castShadow = true;
-  torso.add(chestPlate);
-  addOutlineShell(torso, chestPlate, 1.11, 1.11, 1.13);
+    const waistTorso = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.195, 0.142, 0.34, 16),
+      clothMat
+    );
+    waistTorso.scale.set(1.02, 1, 0.72);
+    waistTorso.position.y = 0.37;
+    waistTorso.castShadow = true;
+    torso.add(waistTorso);
+    addOutlineShell(torso, waistTorso);
 
-  // Laser-tag chest & spine sensor rings
-  const chestCore = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.38, 16), teamGlowMat);
+    const bustArmor = new THREE.Mesh(
+      new THREE.BoxGeometry(0.32, 0.21, 0.28),
+      armorMat
+    );
+    bustArmor.position.set(0, 0.39, 0.04);
+    bustArmor.rotation.x = -0.18;
+    bustArmor.castShadow = true;
+    torso.add(bustArmor);
+    addOutlineShell(torso, bustArmor);
+  } else {
+    // Standard / Heavy Tactical Torso
+    const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.23, 0.1, 14), armorMat);
+    belt.position.y = 0;
+    torso.add(belt);
+
+    const jacket = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.23, 0.52, 14), clothMat);
+    jacket.scale.set(1.1, 1, 0.78);
+    jacket.position.y = 0.3;
+    jacket.castShadow = true;
+    torso.add(jacket);
+    addOutlineShell(torso, jacket);
+
+    const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.38, 0.34), armorMat);
+    chestPlate.position.set(0, 0.33, 0.01);
+    chestPlate.castShadow = true;
+    torso.add(chestPlate);
+    addOutlineShell(torso, chestPlate);
+  }
+
+  // Chest core sensor ring uses skin's own visor/accent color (no forced blue fill!)
+  const chestCore = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.36, 16), visorMat);
   chestCore.rotation.x = Math.PI / 2;
-  chestCore.position.set(0, 0.35, 0.01);
+  chestCore.position.set(0, 0.36, 0.02);
   torso.add(chestCore);
 
   // Jacket collar
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.04, 8, 16), clothMat);
+  const collar = new THREE.Mesh(
+    new THREE.TorusGeometry(isWoman ? 0.12 : 0.145, 0.038, 8, 16),
+    clothMat
+  );
   collar.rotation.x = Math.PI / 2;
   collar.position.y = 0.57;
   torso.add(collar);
 
+  // Weapon-Specific Torso Equipment
+  if (bodyStyle.hasBreacherVest) {
+    // Shotgun Operator: Heavy Tactical Breacher Vest in lighter skin tint (e.g. light red for Crimson Striker)
+    const vestPbr = createArmorPBRTextures(bodyStyle.vestColorHex, skin.trimColor, 'armor');
+    const vestMat = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      map: vestPbr.map,
+      bumpMap: vestPbr.bumpMap,
+      bumpScale: 0.014,
+      roughnessMap: vestPbr.roughnessMap,
+      metalness: 0.22,
+      roughness: 0.48,
+      clearcoat: 0.28,
+      clearcoatRoughness: 0.32,
+    });
+
+    const vestFront = new THREE.Mesh(new THREE.BoxGeometry(0.49, 0.4, 0.4), vestMat);
+    vestFront.position.set(0, 0.33, 0.015);
+    vestFront.castShadow = true;
+    torso.add(vestFront);
+    addOutlineShell(torso, vestFront);
+
+    const vestStrapL = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.12, 0.38), vestMat);
+    vestStrapL.position.set(-0.16, 0.54, 0.01);
+    torso.add(vestStrapL);
+    const vestStrapR = vestStrapL.clone();
+    vestStrapR.position.set(0.16, 0.54, 0.01);
+    torso.add(vestStrapR);
+
+    const vestCollar = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.09, 0.28), vestMat);
+    vestCollar.position.set(0, 0.57, -0.02);
+    torso.add(vestCollar);
+
+    const lowerAbFlap = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.13, 0.38), vestMat);
+    lowerAbFlap.position.set(0, 0.1, 0.03);
+    torso.add(lowerAbFlap);
+
+    // Tactical chest rig straps & shell loops on the Breacher Vest
+    for (const sx of [-0.16, 0.16]) {
+      const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.06, 0.42), trimMat);
+      buckle.position.set(sx, 0.48, 0.015);
+      torso.add(buckle);
+    }
+    const chestBand = new THREE.Mesh(new THREE.BoxGeometry(0.495, 0.055, 0.415), armorMat);
+    chestBand.position.set(0, 0.22, 0.015);
+    torso.add(chestBand);
+    for (const sx of [-0.14, -0.05, 0.05, 0.14]) {
+      const shellLoop = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.09, 8), trimMat);
+      shellLoop.position.set(sx, 0.22, 0.225);
+      torso.add(shellLoop);
+    }
+  } else if (bodyStyle.hasAssaultGear) {
+    // AR Operator (1st gun): Tactical Commando chest mag pouches + left-shoulder comms antenna
+    for (const px of [-0.13, 0, 0.13]) {
+      const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.14, 0.075), trimMat);
+      pouch.position.set(px, 0.21, 0.195);
+      torso.add(pouch);
+    }
+    const backPack = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.38, 0.14), armorMat);
+    backPack.position.set(0, 0.36, -0.22);
+    torso.add(backPack);
+    addOutlineShell(torso, backPack);
+
+    const antennaMast = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.016, 0.42, 8), trimMat);
+    antennaMast.position.set(-0.14, 0.72, -0.22);
+    torso.add(antennaMast);
+    const antennaTip = new THREE.Mesh(new THREE.SphereGeometry(0.024, 8, 8), visorMat);
+    antennaTip.position.set(-0.14, 0.94, -0.22);
+    torso.add(antennaTip);
+  } else if (bodyStyle.hasFeatherHat) {
+    // Sniper Operator: Recon mantle / shoulder drape around upper torso
+    const mantle = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.39, 0.26, 16), clothMat);
+    mantle.scale.set(1.18, 1, 0.88);
+    mantle.position.set(0, 0.49, -0.02);
+    torso.add(mantle);
+    addOutlineShell(torso, mantle);
+  }
+
   // Articulated Left Arm + Shoulder Pauldron
   const armL = new THREE.Group();
-  armL.position.set(-0.34, 0.49, 0);
-  const pauldronL = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), trimMat);
-  pauldronL.scale.set(1, 0.9, 1.15);
+  armL.position.set(-shoulderX, 0.49, 0);
+  const pauldronRadius = isWoman || bodyStyle.hasFeatherHat ? 0.1 : 0.13;
+  const pauldronL = bodyStyle.hasAssaultGear
+    ? new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 0.24), trimMat)
+    : new THREE.Mesh(new THREE.SphereGeometry(pauldronRadius, 12, 10), trimMat);
+  if (bodyStyle.hasAssaultGear) {
+    pauldronL.rotation.z = 0.28;
+  } else {
+    pauldronL.scale.set(1, 0.9, 1.15);
+  }
   armL.add(pauldronL);
-  addOutlineShell(armL, pauldronL, 1.18, 1.18, 1.16);
+  addOutlineShell(armL, pauldronL);
 
-  const sleeveL = new THREE.Mesh(new THREE.CapsuleGeometry(0.068, 0.38, 6, 10), clothMat);
+  const sleeveL = new THREE.Mesh(new THREE.CapsuleGeometry(armRadius, 0.38, 6, 10), clothMat);
   sleeveL.position.set(0, -0.24, 0.12);
   sleeveL.rotation.x = -0.55;
   sleeveL.rotation.z = 0.12;
   armL.add(sleeveL);
-  addOutlineShell(armL, sleeveL, 1.24, 1.07, 1.24);
+  addOutlineShell(armL, sleeveL);
   torso.add(armL);
 
-  // Articulated Right Arm + Blaster Carbine
+  // Articulated Right Arm + Weapon-Matched Blaster Prop
   const armR = new THREE.Group();
-  armR.position.set(0.34, 0.49, 0);
-  const pauldronR = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), trimMat);
-  pauldronR.scale.set(1, 0.9, 1.15);
+  armR.position.set(shoulderX, 0.49, 0);
+  const pauldronR = bodyStyle.hasAssaultGear
+    ? new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 0.24), trimMat)
+    : new THREE.Mesh(new THREE.SphereGeometry(pauldronRadius, 12, 10), trimMat);
+  if (bodyStyle.hasAssaultGear) {
+    pauldronR.rotation.z = -0.28;
+  } else {
+    pauldronR.scale.set(1, 0.9, 1.15);
+  }
   armR.add(pauldronR);
-  addOutlineShell(armR, pauldronR, 1.18, 1.18, 1.16);
+  addOutlineShell(armR, pauldronR);
 
-  const sleeveR = new THREE.Mesh(new THREE.CapsuleGeometry(0.068, 0.36, 6, 10), clothMat);
+  const sleeveR = new THREE.Mesh(new THREE.CapsuleGeometry(armRadius, 0.36, 6, 10), clothMat);
   sleeveR.position.set(0, -0.22, 0.14);
   sleeveR.rotation.x = -0.85;
   armR.add(sleeveR);
-  addOutlineShell(armR, sleeveR, 1.24, 1.07, 1.24);
+  addOutlineShell(armR, sleeveR);
 
-  const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.11, 0.56), trimMat);
-  rifle.position.set(-0.04, -0.32, 0.42);
+  // Third-person weapon prop shaped to match weaponId
+  const propLength =
+    weaponId === 'helios_rail'
+      ? 0.95
+      : weaponId === 'volt_scatter'
+      ? 0.58
+      : weaponId === 'arc_repeater'
+      ? 0.42
+      : 0.62;
+  const propWidth = weaponId === 'volt_scatter' ? 0.12 : 0.085;
+  const rifle = new THREE.Mesh(
+    new THREE.BoxGeometry(propWidth, 0.11, propLength),
+    armorMat
+  );
+  rifle.position.set(-0.04, -0.32, 0.24 + propLength * 0.35);
   armR.add(rifle);
 
-  const rifleCore = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, 0.25), teamGlowMat);
-  rifleCore.position.set(-0.04, -0.3, 0.45);
+  const rifleCore = new THREE.Mesh(
+    new THREE.BoxGeometry(propWidth + 0.01, 0.03, propLength * 0.48),
+    visorMat
+  );
+  rifleCore.position.set(-0.04, -0.295, 0.26 + propLength * 0.36);
   armR.add(rifleCore);
+
+  if (weaponId === 'helios_rail') {
+    const scopeMount = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.03, 0.24, 10), trimMat);
+    scopeMount.rotation.x = Math.PI / 2;
+    scopeMount.position.set(-0.04, -0.22, 0.52);
+    armR.add(scopeMount);
+  }
   torso.add(armR);
 
-  // Sculpted Tactical Helmet + Ear Comms + Wrap-Around Illuminated Visor
+  // Sculpted Head + Weapon-Specific Headgear (Hat + Black Feather / Ponytail / Heavy Brow Helmet)
   const head = new THREE.Group();
   head.position.set(0, 0.73, 0);
 
-  const helmetShell = new THREE.Mesh(new THREE.SphereGeometry(0.185, 16, 14), armorMat);
-  helmetShell.scale.set(0.95, 1.05, 1.08);
+  const helmetShell = new THREE.Mesh(
+    new THREE.SphereGeometry(isWoman ? 0.172 : 0.185, 16, 14),
+    armorMat
+  );
+  helmetShell.scale.set(isWoman ? 0.92 : 0.95, 1.04, isWoman ? 1.03 : 1.08);
   helmetShell.castShadow = true;
   head.add(helmetShell);
-  addOutlineShell(head, helmetShell, 1.15, 1.14, 1.15);
-
-  const crest = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.05, 0.28), trimMat);
-  crest.position.set(0, 0.175, -0.01);
-  head.add(crest);
+  addOutlineShell(head, helmetShell);
 
   const visor = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.182, 0.178, 0.09, 16, 1, false, -Math.PI * 0.38, Math.PI * 0.76),
+    new THREE.CylinderGeometry(
+      isWoman ? 0.168 : 0.182,
+      isWoman ? 0.164 : 0.178,
+      isWoman ? 0.075 : 0.09,
+      16,
+      1,
+      false,
+      -Math.PI * 0.38,
+      Math.PI * 0.76
+    ),
     visorMat
   );
   visor.position.set(0, 0.015, 0.02);
   head.add(visor);
 
-  const chinGuard = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.14), trimMat);
-  chinGuard.position.set(0, -0.09, 0.11);
-  head.add(chinGuard);
+  if (bodyStyle.hasFeatherHat) {
+    // Sniper Marksman: Tactical wide-brim hat + prominent sculpted BLACK FEATHER
+    const hatMat = new THREE.MeshStandardMaterial({
+      color: 0x32353e,
+      roughness: 0.72,
+      metalness: 0.14,
+    });
+    const featherMat = new THREE.MeshStandardMaterial({
+      color: 0x050507,
+      roughness: 0.38,
+      metalness: 0.26,
+    });
 
-  const earPodL = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 12), trimMat);
+    const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.33, 0.03, 20), hatMat);
+    hatBrim.position.set(0, 0.145, 0.01);
+    hatBrim.rotation.x = -0.08;
+    head.add(hatBrim);
+    addOutlineShell(head, hatBrim, 0.025);
+
+    const hatCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.195, 0.16, 16), hatMat);
+    hatCrown.position.set(0, 0.225, 0.0);
+    hatCrown.rotation.x = -0.06;
+    head.add(hatCrown);
+    addOutlineShell(head, hatCrown, 0.025);
+
+    const hatBand = new THREE.Mesh(new THREE.CylinderGeometry(0.192, 0.198, 0.036, 16), trimMat);
+    hatBand.position.set(0, 0.168, 0.005);
+    hatBand.rotation.x = -0.06;
+    head.add(hatBand);
+
+    // Sculpted 3-part Black Feather tucked into left hat band and sweeping up/back
+    const featherGroup = new THREE.Group();
+    featherGroup.position.set(-0.18, 0.19, 0.04);
+    featherGroup.rotation.set(-0.34, 0.12, 0.44);
+
+    const quill = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.012, 0.38, 6), featherMat);
+    quill.position.y = 0.16;
+    featherGroup.add(quill);
+
+    const lowerPlume = new THREE.Mesh(new THREE.ConeGeometry(0.062, 0.28, 8), featherMat);
+    lowerPlume.scale.set(0.36, 1, 1.15);
+    lowerPlume.position.set(0, 0.18, -0.01);
+    featherGroup.add(lowerPlume);
+
+    const tipPlume = new THREE.Mesh(new THREE.ConeGeometry(0.048, 0.22, 8), featherMat);
+    tipPlume.scale.set(0.32, 1, 1.05);
+    tipPlume.position.set(-0.01, 0.32, -0.055);
+    tipPlume.rotation.x = -0.35;
+    featherGroup.add(tipPlume);
+
+    head.add(featherGroup);
+    addOutlineShell(featherGroup, lowerPlume, 0.022);
+
+    // Rangefinder targeting monocle over right visor eye
+    const monocle = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.06, 10), visorMat);
+    monocle.rotation.x = Math.PI / 2;
+    monocle.position.set(0.09, 0.02, 0.18);
+    head.add(monocle);
+  } else if (isWoman) {
+    // SMG Woman Operator: Sleek contoured headset band + flowing swept dark ponytail
+    const hairMat = new THREE.MeshStandardMaterial({
+      color: 0x1e1b24,
+      roughness: 0.62,
+      metalness: 0.18,
+    });
+
+    const headband = new THREE.Mesh(new THREE.TorusGeometry(0.175, 0.022, 8, 18), trimMat);
+    headband.rotation.x = Math.PI / 2 - 0.18;
+    headband.position.set(0, 0.08, -0.01);
+    head.add(headband);
+
+    const hairTie = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.016, 8, 12), trimMat);
+    hairTie.position.set(0.04, 0.04, -0.185);
+    head.add(hairTie);
+
+    const ponyUpper = new THREE.Mesh(new THREE.CapsuleGeometry(0.052, 0.16, 6, 10), hairMat);
+    ponyUpper.position.set(0.09, -0.02, -0.22);
+    ponyUpper.rotation.set(0.68, 0, -0.28);
+    head.add(ponyUpper);
+    addOutlineShell(head, ponyUpper, 0.024);
+
+    const ponyLower = new THREE.Mesh(new THREE.ConeGeometry(0.058, 0.25, 10), hairMat);
+    ponyLower.position.set(0.15, -0.18, -0.22);
+    ponyLower.rotation.set(2.8, 0, -0.22);
+    head.add(ponyLower);
+    addOutlineShell(head, ponyLower, 0.024);
+  } else {
+    // AR & Shotgun tactical helmet brow crest + chin guard
+    const crest = new THREE.Mesh(
+      new THREE.BoxGeometry(bodyStyle.hasAssaultGear ? 0.09 : 0.07, 0.055, 0.29),
+      trimMat
+    );
+    crest.position.set(0, 0.175, -0.01);
+    head.add(crest);
+
+    if (bodyStyle.hasAssaultGear) {
+      const browPeak = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.045, 0.12), armorMat);
+      browPeak.position.set(0, 0.09, 0.16);
+      browPeak.rotation.x = 0.2;
+      head.add(browPeak);
+    }
+
+    const chinGuard = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.14), trimMat);
+    chinGuard.position.set(0, -0.09, 0.11);
+    head.add(chinGuard);
+  }
+
+  const earPodL = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.046, 0.038, 12), trimMat);
   earPodL.rotation.z = Math.PI / 2;
-  earPodL.position.set(-0.18, 0, 0);
+  earPodL.position.set(isWoman ? -0.165 : -0.18, 0, 0);
   head.add(earPodL);
 
   const earPodR = earPodL.clone();
-  earPodR.position.set(0.18, 0, 0);
+  earPodR.position.set(isWoman ? 0.165 : 0.18, 0, 0);
   head.add(earPodR);
 
   torso.add(head);
@@ -751,7 +1083,7 @@ export function buildAvatarRig(
     const builtTag = createNametagSprite(nickname, relation);
     nametagSprite = builtTag.sprite;
     nametagTexture = builtTag.texture;
-    nametagSprite.position.set(0, 2.34, 0);
+    nametagSprite.position.set(0, bodyStyle.hasFeatherHat ? 2.48 : 2.34, 0);
     group.add(nametagSprite);
   }
 
