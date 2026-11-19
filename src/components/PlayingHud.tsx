@@ -1,10 +1,24 @@
-import React, { useState } from 'react';
-import { MessageSquare, Pause, Volume2, VolumeX, Sparkles, FastForward } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  ArrowLeft,
+  FastForward,
+  Gamepad2,
+  MessageSquare,
+  Pause,
+  RotateCcw,
+  Settings as SettingsIcon,
+  Skull,
+  Sparkles,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import { HudSnapshot } from '../engine/ArenaEngine';
 import { MAPS, WEAPONS, WEAPON_LIST } from '../game/catalog';
 import {
   ChatMessage,
   GameScreenState,
+  GameSettings,
+  Keybinds,
   LanguageCode,
   MapId,
   MatchSummary,
@@ -12,6 +26,7 @@ import {
 } from '../game/types';
 import { t } from '../i18n/translations';
 import { Minimap } from './Minimap';
+import { SettingsPanel } from './SettingsPanel';
 
 interface PlayingHudProps {
   hud: HudSnapshot;
@@ -21,6 +36,8 @@ interface PlayingHudProps {
   audioEnabled: boolean;
   showFps: boolean;
   lang: LanguageCode;
+  settings: GameSettings;
+  keybinds: Keybinds;
   easterEggBannerVisible: boolean;
   matchSummary: MatchSummary | null;
   chatMessages: ChatMessage[];
@@ -30,10 +47,13 @@ interface PlayingHudProps {
   onToggleMute: () => void;
   onPause: () => void;
   onResume: () => void;
+  onRespawn: () => void;
   onRestart: () => void;
   onReturnHub: () => void;
   onSkipTutorial: () => void;
   onSelectWeapon: (id: WeaponId) => void;
+  onUpdateSettings: (next: GameSettings) => void;
+  onUpdateKeybinds: (next: Keybinds) => void;
 }
 
 export const PlayingHud: React.FC<PlayingHudProps> = ({
@@ -44,6 +64,8 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
   audioEnabled,
   showFps,
   lang,
+  settings,
+  keybinds,
   easterEggBannerVisible,
   matchSummary,
   chatMessages,
@@ -53,14 +75,24 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
   onToggleMute,
   onPause,
   onResume,
+  onRespawn,
   onRestart,
   onReturnHub,
   onSkipTutorial,
   onSelectWeapon,
+  onUpdateSettings,
+  onUpdateKeybinds,
 }) => {
   const [chatInput, setChatInput] = useState('');
+  const [showPauseSettings, setShowPauseSettings] = useState(false);
   const activeWeapon = WEAPONS[hud.weaponId];
   const mapDef = MAPS[mapId];
+
+  useEffect(() => {
+    if (screenState !== 'paused') {
+      setShowPauseSettings(false);
+    }
+  }, [screenState]);
 
   const handleChatSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,38 +103,83 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
 
   if (screenState === 'paused') {
     return (
-      <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4">
-        <div className="w-full max-w-md rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-[#0D131F] p-6 shadow-2xl">
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            {t(lang, 'match.paused')}
-          </h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            {t(lang, mapDef.nameKey as Parameters<typeof t>[1])} · {hud.tags} {t(lang, 'hud.tags')}
-          </p>
-          <div className="mt-6 flex flex-col gap-3">
-            <button
-              type="button"
-              onClick={onResume}
-              className="w-full rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 transition-colors cursor-pointer"
-            >
-              {t(lang, 'cta.resume')}
-            </button>
-            <button
-              type="button"
-              onClick={onRestart}
-              className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/80 px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-            >
-              {t(lang, 'cta.restart')}
-            </button>
-            <button
-              type="button"
-              onClick={onReturnHub}
-              className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            >
-              {t(lang, 'cta.returnHub')}
-            </button>
+      <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/75 p-4">
+        {showPauseSettings ? (
+          <div className="flex max-h-[88vh] w-full max-w-4xl flex-col rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-[#0D131F] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-5 py-3.5">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowPauseSettings(false)}
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  {t(lang, 'match.paused')}
+                </button>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                  {t(lang, 'cta.settings')}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={onResume}
+                className="rounded-lg bg-cyan-500 px-4 py-1.5 text-xs font-semibold text-slate-950 hover:bg-cyan-400 cursor-pointer"
+              >
+                {t(lang, 'cta.resume')}
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              <SettingsPanel
+                settings={settings}
+                keybinds={keybinds}
+                lang={lang}
+                onUpdateSettings={onUpdateSettings}
+                onUpdateKeybinds={onUpdateKeybinds}
+              />
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="w-full max-w-md rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-[#0D131F] p-6 shadow-2xl">
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+              {t(lang, 'match.paused')}
+            </h2>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              {t(lang, mapDef.nameKey as Parameters<typeof t>[1])} · {hud.tags} {t(lang, 'hud.tags')}
+            </p>
+            <div className="mt-6 flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={onResume}
+                className="w-full rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 transition-colors cursor-pointer"
+              >
+                {t(lang, 'cta.resume')}
+              </button>
+              <button
+                type="button"
+                data-testid="pause-settings-btn"
+                onClick={() => setShowPauseSettings(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/80 px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+              >
+                <SettingsIcon className="h-4 w-4 text-cyan-500" />
+                {t(lang, 'cta.settings')}
+              </button>
+              <button
+                type="button"
+                onClick={onRestart}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/80 px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+              >
+                {t(lang, 'cta.restart')}
+              </button>
+              <button
+                type="button"
+                onClick={onReturnHub}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                {t(lang, 'cta.returnHub')}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -282,7 +359,7 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
       )}
 
       {/* Precision Scope Overlay: Rebuilt Optical Sniper Scope for Helios Railgun & Holo ADS for other weapons */}
-      {hud.isScoped && hud.weaponId === 'helios_rail' && (
+      {!hud.isDead && hud.isScoped && hud.weaponId === 'helios_rail' && (
         <div
           data-testid="railgun-scope-overlay"
           className="fixed inset-0 z-0 flex items-center justify-center"
@@ -350,7 +427,7 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
         </div>
       )}
 
-      {hud.isScoped && hud.weaponId !== 'helios_rail' && (
+      {!hud.isDead && hud.isScoped && hud.weaponId !== 'helios_rail' && (
         <div
           data-testid="holo-scope-overlay"
           className="fixed inset-0 z-0 flex items-center justify-center"
@@ -369,8 +446,9 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
         </div>
       )}
 
-      {/* Exact (0,0) Center Crosshair */}
-      <div className="fixed left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2">
+      {/* Exact (0,0) Center Crosshair (hidden while dead) */}
+      {!hud.isDead && (
+        <div className="fixed left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2">
         <svg width="42" height="42" viewBox="0 0 42 42" aria-hidden="true">
           <circle
             cx="21"
@@ -443,7 +521,8 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
             </span>
           </div>
         )}
-      </div>
+        </div>
+      )}
 
       {/* Top-Left Tactical Minimap */}
       <Minimap data={hud.minimap} lang={lang} />
@@ -462,12 +541,12 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
       {hud.gameMode === 'tdm' ? (
         <div className="fixed left-1/2 top-4 -translate-x-1/2 flex items-center gap-5 rounded-lg border border-white/15 bg-[#070B12]/85 px-5 py-2 text-white">
           <div className="text-center">
-            <div className="text-[10px] font-bold tracking-widest text-cyan-400">
+            <div className="text-[10px] font-bold tracking-widest text-blue-400">
               {t(lang, 'hud.cyanTeam')}
             </div>
             <div
               data-testid="tdm-score-cyan"
-              className="hud-numeral text-xl font-bold leading-none text-cyan-300"
+              className="hud-numeral text-xl font-bold leading-none text-blue-300"
             >
               {hud.teamScoreCyan}
             </div>
@@ -483,12 +562,12 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
           </div>
           <div className="h-7 w-px bg-white/15" />
           <div className="text-center">
-            <div className="text-[10px] font-bold tracking-widest text-amber-400">
+            <div className="text-[10px] font-bold tracking-widest text-rose-400">
               {t(lang, 'hud.amberTeam')}
             </div>
             <div
               data-testid="tdm-score-amber"
-              className="hud-numeral text-xl font-bold leading-none text-amber-300"
+              className="hud-numeral text-xl font-bold leading-none text-rose-300"
             >
               {hud.teamScoreAmber}
             </div>
@@ -725,11 +804,107 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
         </div>
       </div>
 
-      {/* Subtle PointerLock Hint */}
-      {!hud.pointerLocked && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded bg-[#070B12]/75 px-3 py-1 text-[11px] text-slate-300">
-          {t(lang, 'hud.clickToAim')}
+      {/* 3-Second Kill Cam Attacker Perspective Replay Banner (unobstructed center viewport) */}
+      {hud.isDead && hud.isKillCam && (
+        <div
+          data-testid="killcam-overlay"
+          className="pointer-events-none fixed inset-0 z-30 flex flex-col justify-between"
+        >
+          <div className="flex items-center justify-between border-b border-rose-500/40 bg-[#070B12]/85 px-6 py-3 text-white">
+            <div className="flex items-center gap-3">
+              <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-rose-500" />
+              <span className="font-mono text-sm font-bold tracking-widest text-rose-400">
+                {t(lang, 'killcam.title')}
+              </span>
+              <span className="text-xs text-slate-300">
+                {t(lang, 'killcam.sub')}
+              </span>
+            </div>
+            <div
+              data-testid="killcam-countdown"
+              className="font-mono text-base font-bold tabular-nums text-amber-300"
+            >
+              {(hud.killCamRemainingMs / 1000).toFixed(1)}s
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between border-t border-rose-500/35 bg-[#070B12]/85 px-6 py-3 text-white">
+            <div className="text-xs text-slate-300">
+              {t(lang, 'death.eliminatedBy')}{' '}
+              <span className="font-bold text-rose-300">{hud.killedBy ?? 'Arena Bot'}</span>
+            </div>
+            <div className="font-mono text-xs tracking-wider text-slate-400">
+              REPLAY
+            </div>
+          </div>
         </div>
+      )}
+
+      {/* Death Screen Overlay (shown after Kill Cam completes) */}
+      {hud.isDead && !hud.isKillCam && (
+        <div
+          data-testid="death-screen"
+          className="pointer-events-auto fixed inset-0 z-30 flex items-center justify-center bg-black/75 p-4"
+        >
+          <div className="w-full max-w-md rounded-xl border border-rose-500/40 bg-[#0D131F] p-6 text-center text-white shadow-2xl">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-rose-500/40 bg-rose-500/15 text-rose-400">
+              <Skull className="h-6 w-6" />
+            </div>
+            <h2 className="mt-3 text-2xl font-bold tracking-tight text-rose-400">
+              {t(lang, 'death.title')}
+            </h2>
+            <p className="mt-1 text-sm text-slate-300">
+              {t(lang, 'death.eliminatedBy')}{' '}
+              <span className="font-semibold text-white">{hud.killedBy ?? 'Arena Bot'}</span>
+            </p>
+
+            <div className="mt-5 rounded-lg border border-slate-800 bg-slate-900/90 px-4 py-3">
+              {hud.deathRespawnRemainingMs > 0 ? (
+                <div className="text-xs font-medium text-slate-300">
+                  {t(lang, 'death.respawnWait')}{' '}
+                  <span
+                    data-testid="death-countdown"
+                    className="font-mono text-base font-bold text-amber-400"
+                  >
+                    {(hud.deathRespawnRemainingMs / 1000).toFixed(1)}s
+                  </span>
+                </div>
+              ) : (
+                <div className="text-xs font-semibold text-emerald-400">
+                  {t(lang, 'death.respawnReady')}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              data-testid="respawn-btn"
+              disabled={hud.deathRespawnRemainingMs > 0}
+              onClick={onRespawn}
+              className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-500 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-cyan-400 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              <RotateCcw className="h-4 w-4" />
+              {hud.deathRespawnRemainingMs > 0
+                ? `${t(lang, 'cta.respawn')} (${Math.ceil(hud.deathRespawnRemainingMs / 1000)}s)`
+                : t(lang, 'cta.respawn')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Subtle PointerLock / Controller Hint */}
+      {!hud.isDead && hud.hasGamepad ? (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded bg-[#070B12]/80 px-3 py-1 text-[11px] text-cyan-300">
+          <Gamepad2 className="h-3.5 w-3.5" />
+          <span>[Start] Pause · [A] Jump · [RT] Fire · [LT] Scope · [X] Reload</span>
+        </div>
+      ) : (
+        !hud.isDead &&
+        !hud.pointerLocked && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded bg-[#070B12]/75 px-3 py-1 text-[11px] text-slate-300">
+            {t(lang, 'hud.clickToAim')}
+          </div>
+        )
       )}
 
       {/* In-Game Messaging Drawer */}

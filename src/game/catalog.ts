@@ -5,6 +5,7 @@ import {
   Keybinds,
   MapDef,
   MapId,
+  MapObstacle,
   PlayerCloudProfile,
   WeaponDef,
   WeaponId,
@@ -265,6 +266,87 @@ export const AVATAR_SKINS: AvatarSkinDef[] = [
   },
 ];
 
+function buildEnterableSideBuilding(side: -1 | 1): MapObstacle[] {
+  // Long enterable concrete side building spanning X: [46, 64] (or [-64, -46]) and Z: [-48, +48]
+  const outerX = side * 64;
+  const innerX = side * 46.7;
+  const midX = side * 55.35;
+  const wallH = 4.5;
+  const thick = 1.4;
+
+  const obs: MapObstacle[] = [
+    // Solid outer side wall running whole length of building
+    { x: outerX, y: 0, z: 0, w: thick, h: wallH, d: 96, kind: 'building_wall' },
+
+    // North end wall (z = -47.3) with central 4.6m doorway
+    { x: side * 60.3, y: 0, z: -47.3, w: 6.0, h: wallH, d: thick, kind: 'building_wall' },
+    { x: side * 49.7, y: 0, z: -47.3, w: 6.0, h: wallH, d: thick, kind: 'building_wall' },
+    { x: side * 55.0, y: 3.0, z: -47.3, w: 4.6, h: 1.5, d: thick, kind: 'building_wall' },
+
+    // South end wall (z = +47.3) with central 4.6m doorway
+    { x: side * 60.3, y: 0, z: 47.3, w: 6.0, h: wallH, d: thick, kind: 'building_wall' },
+    { x: side * 49.7, y: 0, z: 47.3, w: 6.0, h: wallH, d: thick, kind: 'building_wall' },
+    { x: side * 55.0, y: 3.0, z: 47.3, w: 4.6, h: 1.5, d: thick, kind: 'building_wall' },
+
+    // Full roof slab at y = 4.5 so players walk & fight freely indoors underneath
+    { x: midX, y: wallH, z: 0, w: 19.3, h: 0.55, d: 96, kind: 'building_roof' },
+  ];
+
+  // Inner courtyard-facing wall along x = innerX with 4 wide doorways (z = -34, -12, +12, +34)
+  // and concrete window bays (low sill h=1.05 + upper lintel y=2.35, h=2.15) for peeking out
+  const addWindowBay = (zCenter: number, len: number) => {
+    obs.push({ x: innerX, y: 0, z: zCenter, w: thick, h: 1.05, d: len, kind: 'building_wall' });
+    obs.push({ x: innerX, y: 2.35, z: zCenter, w: thick, h: 2.15, d: len, kind: 'building_wall' });
+  };
+  const addDoorHeader = (zCenter: number, len: number) => {
+    obs.push({ x: innerX, y: 3.0, z: zCenter, w: thick, h: 1.5, d: len, kind: 'building_wall' });
+  };
+
+  // End piers & outer window bays
+  obs.push({ x: innerX, y: 0, z: -45.0, w: thick, h: wallH, d: 6.0, kind: 'building_wall' });
+  addWindowBay(-39.1, 5.8);
+  addDoorHeader(-34.0, 4.4);
+
+  // Mid-North section between z = -31.8 and -14.2
+  addWindowBay(-28.6, 6.4);
+  obs.push({ x: innerX, y: 0, z: -23.0, w: thick, h: wallH, d: 4.8, kind: 'building_wall' });
+  addWindowBay(-17.4, 6.4);
+  addDoorHeader(-12.0, 4.4);
+
+  // Center bay between z = -9.8 and +9.8
+  obs.push({ x: innerX, y: 0, z: -7.8, w: thick, h: wallH, d: 4.0, kind: 'building_wall' });
+  addWindowBay(-3.3, 5.0);
+  obs.push({ x: innerX, y: 0, z: 0, w: thick, h: wallH, d: 1.6, kind: 'building_wall' });
+  addWindowBay(3.3, 5.0);
+  obs.push({ x: innerX, y: 0, z: 7.8, w: thick, h: wallH, d: 4.0, kind: 'building_wall' });
+  addDoorHeader(12.0, 4.4);
+
+  // Mid-South section between z = +14.2 and +31.8
+  addWindowBay(17.4, 6.4);
+  obs.push({ x: innerX, y: 0, z: 23.0, w: thick, h: wallH, d: 4.8, kind: 'building_wall' });
+  addWindowBay(28.6, 6.4);
+  addDoorHeader(34.0, 4.4);
+
+  // South end window bay & corner pier
+  addWindowBay(39.1, 5.8);
+  obs.push({ x: innerX, y: 0, z: 45.0, w: thick, h: wallH, d: 6.0, kind: 'building_wall' });
+
+  // Interior cover inside the side building: concrete columns + varied wooden crates
+  obs.push(
+    { x: side * 55.5, y: 0, z: -28, w: 1.8, h: wallH, d: 1.8, kind: 'concrete_wall' },
+    { x: side * 55.5, y: 0, z: 0, w: 2.0, h: wallH, d: 2.0, kind: 'concrete_wall' },
+    { x: side * 55.5, y: 0, z: 28, w: 1.8, h: wallH, d: 1.8, kind: 'concrete_wall' },
+    { x: side * 52.5, y: 0, z: -18, w: 1.9, h: 1.25, d: 1.9, kind: 'wood_crate' },
+    { x: side * 58.2, y: 0, z: -17, w: 1.4, h: 1.0, d: 1.4, kind: 'wood_crate' },
+    { x: side * 58.5, y: 0, z: 18, w: 2.2, h: 1.4, d: 2.2, kind: 'wood_crate' },
+    { x: side * 52.5, y: 0, z: 19, w: 1.5, h: 1.1, d: 1.5, kind: 'wood_crate' },
+    { x: side * 55.5, y: 0, z: -38, w: 2.8, h: 1.5, d: 2.0, kind: 'wood_crate' },
+    { x: side * 55.5, y: 0, z: 38, w: 2.8, h: 1.5, d: 2.0, kind: 'wood_crate' }
+  );
+
+  return obs;
+}
+
 export const MAPS: Record<MapId, MapDef> = {
   hyperion_atrium: {
     id: 'hyperion_atrium',
@@ -272,72 +354,137 @@ export const MAPS: Record<MapId, MapDef> = {
     subtitleKey: 'map.hyperion_atrium.sub',
     arenaHalfSize: 68,
     isOutdoor: true,
-    hasRoads: true,
-    hasTrees: true,
-    hasStreetLights: true,
-    skyTopColor: '#0b1d3a',
-    skyHorizonColor: '#1e3a5f',
-    skyColor: '#132743',
-    fogColor: '#132743',
-    fogDensity: 0.0046,
-    floorColor: '#1a2230',
-    wallColor: '#273449',
-    accentColor: '#06b6d4',
-    keyLightColor: '#fff7ed',
-    hemiSkyColor: '#7dd3fc',
-    hemiGroundColor: '#1e293b',
+    isDaylight: true,
+    floorStyle: 'trampled_earth',
+    hasRoads: false,
+    hasTrees: false,
+    hasStreetLights: false,
+    skyTopColor: '#5485ba',
+    skyHorizonColor: '#cedbe6',
+    skyColor: '#a6c0d6',
+    fogColor: '#c3d2df',
+    fogDensity: 0.0029,
+    floorColor: '#6d4f33',
+    wallColor: '#7a7f87',
+    accentColor: '#d97706',
+    keyLightColor: '#fff5e4',
+    hemiSkyColor: '#d8e9f8',
+    hemiGroundColor: '#5c422a',
     obstacles: [
-      // Central Parkour Tiered Spire & Sky Bridges
-      { x: 0, y: 0, z: 0, w: 6.5, h: 3.4, d: 6.5, kind: 'crate' },
-      { x: -10, y: 0, z: 0, w: 4.5, h: 1.4, d: 4.5, kind: 'crate' },
-      { x: 10, y: 0, z: 0, w: 4.5, h: 1.4, d: 4.5, kind: 'crate' },
-      { x: 0, y: 2.8, z: -10.5, w: 5.2, h: 0.6, d: 13, kind: 'bridge' },
-      { x: 0, y: 2.8, z: 10.5, w: 5.2, h: 0.6, d: 13, kind: 'bridge' },
-      // Inner Quadrant Houses
-      { x: -24, y: 0, z: -24, w: 8.5, h: 5.2, d: 8.5, kind: 'house' },
-      { x: 24, y: 0, z: 24, w: 8.5, h: 5.2, d: 8.5, kind: 'house' },
-      { x: 24, y: 0, z: -24, w: 7.5, h: 4.6, d: 7.5, kind: 'house' },
-      { x: -24, y: 0, z: 24, w: 7.5, h: 4.6, d: 7.5, kind: 'house' },
-      // Outer District Pavilions & Stepping Crates
-      { x: -45, y: 0, z: -22, w: 7.0, h: 4.4, d: 7.0, kind: 'house' },
-      { x: 45, y: 0, z: 22, w: 7.0, h: 4.4, d: 7.0, kind: 'house' },
-      { x: -45, y: 0, z: 22, w: 6.4, h: 4.0, d: 6.4, kind: 'house' },
-      { x: 45, y: 0, z: -22, w: 6.4, h: 4.0, d: 6.4, kind: 'house' },
-      { x: -16, y: 0, z: -18, w: 4.0, h: 2.2, d: 4.0, kind: 'crate' },
-      { x: 16, y: 0, z: 18, w: 4.0, h: 2.2, d: 4.0, kind: 'crate' },
-      { x: -34, y: 0, z: -38, w: 4.5, h: 2.4, d: 4.5, kind: 'crate' },
-      { x: 34, y: 0, z: 38, w: 4.5, h: 2.4, d: 4.5, kind: 'crate' },
-      // Peeking Window Bunkers along N/S & outer lanes
-      { x: 0, y: 0, z: -28, w: 5.8, h: 1.05, d: 1.24, kind: 'peek_wall' },
-      { x: -3.8, y: 0, z: -28, w: 1.6, h: 2.8, d: 1.48, kind: 'peek_wall' },
-      { x: 3.8, y: 0, z: -28, w: 1.6, h: 2.8, d: 1.48, kind: 'peek_wall' },
-      { x: 0, y: 2.2, z: -28, w: 5.8, h: 0.6, d: 1.36, kind: 'peek_wall' },
-      { x: 0, y: 0, z: 28, w: 5.8, h: 1.05, d: 1.24, kind: 'peek_wall' },
-      { x: -3.8, y: 0, z: 28, w: 1.6, h: 2.8, d: 1.48, kind: 'peek_wall' },
-      { x: 3.8, y: 0, z: 28, w: 1.6, h: 2.8, d: 1.48, kind: 'peek_wall' },
-      { x: 0, y: 2.2, z: 28, w: 5.8, h: 0.6, d: 1.36, kind: 'peek_wall' },
-      // Mid-outer avenue shoulder-peek barriers
-      { x: -32, y: 0, z: 0, w: 1.8, h: 1.25, d: 10.5, kind: 'peek_wall' },
-      { x: 32, y: 0, z: 0, w: 1.8, h: 1.25, d: 10.5, kind: 'peek_wall' },
-      { x: 0, y: 0, z: -46, w: 9.5, h: 1.25, d: 1.8, kind: 'peek_wall' },
-      { x: 0, y: 0, z: 46, w: 9.5, h: 1.25, d: 1.8, kind: 'peek_wall' },
+      // Two long enterable buildings along West (-X) and East (+X) sides
+      ...buildEnterableSideBuilding(-1),
+      ...buildEnterableSideBuilding(1),
+
+      // Central Square Platform + step-up wooden crates & corner cover boxes
+      { x: 0, y: 0, z: 0, w: 11.0, h: 1.35, d: 11.0, kind: 'platform' },
+      { x: -6.4, y: 0, z: 0, w: 1.8, h: 0.72, d: 2.8, kind: 'wood_crate' },
+      { x: 6.4, y: 0, z: 0, w: 1.8, h: 0.72, d: 2.8, kind: 'wood_crate' },
+      { x: -3.5, y: 1.35, z: -3.5, w: 1.6, h: 1.05, d: 1.6, kind: 'wood_crate' },
+      { x: 3.5, y: 1.35, z: 3.5, w: 1.6, h: 1.05, d: 1.6, kind: 'wood_crate' },
+
+      // Non-building North (-Z, Red Team) & South (+Z, Blue Team) Concrete Peek Walls
+      // North Central Concrete Peek Bunker (z = -46)
+      { x: 0, y: 0, z: -46, w: 8.4, h: 1.05, d: 1.3, kind: 'concrete_wall' },
+      { x: -5.0, y: 0, z: -46, w: 1.6, h: 2.85, d: 1.5, kind: 'concrete_wall' },
+      { x: 5.0, y: 0, z: -46, w: 1.6, h: 2.85, d: 1.5, kind: 'concrete_wall' },
+      { x: 0, y: 2.25, z: -46, w: 8.4, h: 0.65, d: 1.35, kind: 'concrete_wall' },
+      // North Flanking Concrete Peek Walls
+      { x: -19, y: 0, z: -47, w: 8.6, h: 1.32, d: 1.25, kind: 'concrete_wall' },
+      { x: 19, y: 0, z: -47, w: 8.6, h: 1.32, d: 1.25, kind: 'concrete_wall' },
+      { x: -30, y: 0, z: -45, w: 4.8, h: 2.6, d: 1.3, kind: 'concrete_wall' },
+      { x: 30, y: 0, z: -45, w: 4.8, h: 2.6, d: 1.3, kind: 'concrete_wall' },
+
+      // South Central Concrete Peek Bunker (z = +46)
+      { x: 0, y: 0, z: 46, w: 8.4, h: 1.05, d: 1.3, kind: 'concrete_wall' },
+      { x: -5.0, y: 0, z: 46, w: 1.6, h: 2.85, d: 1.5, kind: 'concrete_wall' },
+      { x: 5.0, y: 0, z: 46, w: 1.6, h: 2.85, d: 1.5, kind: 'concrete_wall' },
+      { x: 0, y: 2.25, z: 46, w: 8.4, h: 0.65, d: 1.35, kind: 'concrete_wall' },
+      // South Flanking Concrete Peek Walls
+      { x: -19, y: 0, z: 47, w: 8.6, h: 1.32, d: 1.25, kind: 'concrete_wall' },
+      { x: 19, y: 0, z: 47, w: 8.6, h: 1.32, d: 1.25, kind: 'concrete_wall' },
+      { x: -30, y: 0, z: 45, w: 4.8, h: 2.6, d: 1.3, kind: 'concrete_wall' },
+      { x: 30, y: 0, z: 45, w: 4.8, h: 2.6, d: 1.3, kind: 'concrete_wall' },
+
+      // Inner Ring Concrete Walls & Varied Wooden Boxes around the Center Square Platform
+      { x: 0, y: 0, z: -17, w: 6.2, h: 1.38, d: 1.1, kind: 'concrete_wall' },
+      { x: 0, y: 0, z: 17, w: 6.2, h: 1.38, d: 1.1, kind: 'concrete_wall' },
+      { x: -16, y: 0, z: 0, w: 1.15, h: 2.1, d: 6.8, kind: 'concrete_wall' },
+      { x: 16, y: 0, z: 0, w: 1.15, h: 2.1, d: 6.8, kind: 'concrete_wall' },
+
+      // Large + Stacked Wooden Box Clusters in Quadrants
+      { x: -14, y: 0, z: -13, w: 3.8, h: 2.2, d: 3.4, kind: 'wood_crate' },
+      { x: -14, y: 2.2, z: -13, w: 1.7, h: 1.15, d: 1.7, kind: 'wood_crate' },
+      { x: -10.8, y: 0, z: -14.2, w: 1.8, h: 1.2, d: 1.8, kind: 'wood_crate' },
+      { x: 14, y: 0, z: 13, w: 3.8, h: 2.2, d: 3.4, kind: 'wood_crate' },
+      { x: 14, y: 2.2, z: 13, w: 1.7, h: 1.15, d: 1.7, kind: 'wood_crate' },
+      { x: 10.8, y: 0, z: 14.2, w: 1.8, h: 1.2, d: 1.8, kind: 'wood_crate' },
+
+      { x: 14, y: 0, z: -13, w: 3.2, h: 1.8, d: 2.6, kind: 'wood_crate' },
+      { x: 17.0, y: 0, z: -13.5, w: 1.5, h: 1.05, d: 1.5, kind: 'wood_crate' },
+      { x: -14, y: 0, z: 13, w: 3.2, h: 1.8, d: 2.6, kind: 'wood_crate' },
+      { x: -17.0, y: 0, z: 13.5, w: 1.5, h: 1.05, d: 1.5, kind: 'wood_crate' },
+
+      // Mid-Field Concrete Walls & Mixed Small/Medium/Large Wooden Crates
+      { x: -27, y: 0, z: -22, w: 5.5, h: 1.65, d: 1.15, kind: 'concrete_wall' },
+      { x: 27, y: 0, z: 22, w: 5.5, h: 1.65, d: 1.15, kind: 'concrete_wall' },
+      { x: 27, y: 0, z: -22, w: 4.0, h: 2.35, d: 3.6, kind: 'wood_crate' },
+      { x: 24.0, y: 0, z: -20.5, w: 1.4, h: 1.0, d: 1.4, kind: 'wood_crate' },
+      { x: -27, y: 0, z: 22, w: 4.0, h: 2.35, d: 3.6, kind: 'wood_crate' },
+      { x: -24.0, y: 0, z: 20.5, w: 1.4, h: 1.0, d: 1.4, kind: 'wood_crate' },
+
+      // Scattered Small & Medium Crates Along Open Lanes & Building Approaches
+      { x: -8, y: 0, z: -29, w: 2.6, h: 1.5, d: 2.2, kind: 'wood_crate' },
+      { x: -5.5, y: 0, z: -29.4, w: 1.3, h: 0.95, d: 1.3, kind: 'wood_crate' },
+      { x: 8, y: 0, z: 29, w: 2.6, h: 1.5, d: 2.2, kind: 'wood_crate' },
+      { x: 5.5, y: 0, z: 29.4, w: 1.3, h: 0.95, d: 1.3, kind: 'wood_crate' },
+
+      { x: 10, y: 0, z: -32, w: 2.2, h: 1.35, d: 2.2, kind: 'wood_crate' },
+      { x: -10, y: 0, z: 32, w: 2.2, h: 1.35, d: 2.2, kind: 'wood_crate' },
+
+      { x: -35, y: 0, z: -12, w: 2.8, h: 1.6, d: 2.4, kind: 'wood_crate' },
+      { x: -38, y: 0, z: -10.5, w: 1.5, h: 1.05, d: 1.5, kind: 'wood_crate' },
+      { x: 35, y: 0, z: 12, w: 2.8, h: 1.6, d: 2.4, kind: 'wood_crate' },
+      { x: 38, y: 0, z: 10.5, w: 1.5, h: 1.05, d: 1.5, kind: 'wood_crate' },
+
+      { x: -35, y: 0, z: 12, w: 1.2, h: 1.55, d: 5.4, kind: 'concrete_wall' },
+      { x: 35, y: 0, z: -12, w: 1.2, h: 1.55, d: 5.4, kind: 'concrete_wall' },
+
+      // Team Base Yard Crates (behind N/S walls, well clear of spawn coordinates)
+      { x: -10, y: 0, z: -53, w: 2.6, h: 1.45, d: 2.0, kind: 'wood_crate' },
+      { x: 10, y: 0, z: -53, w: 1.9, h: 1.2, d: 1.9, kind: 'wood_crate' },
+      { x: -10, y: 0, z: 53, w: 1.9, h: 1.2, d: 1.9, kind: 'wood_crate' },
+      { x: 10, y: 0, z: 53, w: 2.6, h: 1.45, d: 2.0, kind: 'wood_crate' },
     ],
     jumpPads: [
-      { x: -17, y: 0, z: 0, radius: 1.7, boostY: 14.0 },
-      { x: 17, y: 0, z: 0, radius: 1.7, boostY: 14.0 },
-      { x: 0, y: 0, z: -20, radius: 1.7, boostY: 14.0 },
-      { x: 0, y: 0, z: 20, radius: 1.7, boostY: 14.0 },
-      { x: -38, y: 0, z: -10, radius: 1.7, boostY: 14.2 },
-      { x: 38, y: 0, z: 10, radius: 1.7, boostY: 14.2 },
+      { x: -28, y: 0, z: 0, radius: 1.7, boostY: 13.8 },
+      { x: 28, y: 0, z: 0, radius: 1.7, boostY: 13.8 },
+      { x: -17, y: 0, z: -28, radius: 1.7, boostY: 13.8 },
+      { x: 17, y: 0, z: 28, radius: 1.7, boostY: 13.8 },
     ],
     spawns: [
-      { x: 0, y: 0, z: 54, yaw: 0 },
-      { x: 0, y: 0, z: -54, yaw: Math.PI },
-      { x: -54, y: 0, z: 0, yaw: -Math.PI / 2 },
-      { x: 54, y: 0, z: 0, yaw: Math.PI / 2 },
-      { x: -44, y: 0, z: 44, yaw: -Math.PI / 4 },
-      { x: 44, y: 0, z: -44, yaw: (3 * Math.PI) / 4 },
+      { x: 0, y: 0, z: 58, yaw: 0 },
+      { x: 0, y: 0, z: -58, yaw: Math.PI },
+      { x: -18, y: 0, z: 58, yaw: 0 },
+      { x: 18, y: 0, z: -58, yaw: Math.PI },
+      { x: -34, y: 0, z: 32, yaw: -Math.PI / 4 },
+      { x: 34, y: 0, z: -32, yaw: (3 * Math.PI) / 4 },
     ],
+    teamSpawns: {
+      // Blue Team (South non-building base, facing North)
+      cyan: [
+        { x: -16, y: 0, z: 58, yaw: 0 },
+        { x: -5, y: 0, z: 59, yaw: 0 },
+        { x: 5, y: 0, z: 59, yaw: 0 },
+        { x: 16, y: 0, z: 58, yaw: 0 },
+      ],
+      // Red Team (North non-building base, facing South)
+      amber: [
+        { x: -16, y: 0, z: -58, yaw: Math.PI },
+        { x: -5, y: 0, z: -59, yaw: Math.PI },
+        { x: 5, y: 0, z: -59, yaw: Math.PI },
+        { x: 16, y: 0, z: -58, yaw: Math.PI },
+      ],
+    },
   },
   orbital_hangar: {
     id: 'orbital_hangar',
@@ -345,6 +492,7 @@ export const MAPS: Record<MapId, MapDef> = {
     subtitleKey: 'map.orbital_hangar.sub',
     arenaHalfSize: 70,
     isOutdoor: false,
+    isDaylight: false,
     hasStreetLights: true,
     skyTopColor: '#09111e',
     skyHorizonColor: '#1b2b44',
@@ -405,6 +553,7 @@ export const MAPS: Record<MapId, MapDef> = {
     subtitleKey: 'map.obsidian_vault.sub',
     arenaHalfSize: 68,
     isOutdoor: true,
+    isDaylight: false,
     hasTrees: false,
     hasStreetLights: true,
     skyTopColor: '#16091c',
@@ -472,6 +621,7 @@ export const MAPS: Record<MapId, MapDef> = {
     subtitleKey: 'map.solace_courtyard.sub',
     arenaHalfSize: 78,
     isOutdoor: true,
+    isDaylight: false,
     hasRoads: true,
     hasTrees: true,
     hasStreetLights: true,
@@ -539,6 +689,7 @@ export const MAPS: Record<MapId, MapDef> = {
     subtitleKey: 'map.cryo_spire.sub',
     arenaHalfSize: 70,
     isOutdoor: true,
+    isDaylight: false,
     hasTrees: true,
     hasStreetLights: true,
     skyTopColor: '#041426',
@@ -857,6 +1008,11 @@ export const DEFAULT_SETTINGS: GameSettings = {
   particlesEnabled: true,
   audioEnabled: true,
   masterVolume: 0.7,
+  controllerEnabled: true,
+  controllerSensitivity: 1.0,
+  controllerDeadzone: 0.15,
+  controllerInvertY: false,
+  controllerVibration: true,
   darkMode: true,
   language: 'en',
   crossPlatformEnabled: true,
@@ -867,9 +1023,9 @@ export function createDefaultProfile(nickname = 'Vanguard01'): PlayerCloudProfil
     accountId: `local-${nickname.toLowerCase()}`,
     nickname,
     platform: 'Web',
-    credits: 650,
+    credits: 100,
     xp: 0,
-    battlePassXp: 250,
+    battlePassXp: 0,
     battlePassPremium: false,
     claimedFreeTiers: [],
     claimedPremiumTiers: [],

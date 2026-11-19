@@ -564,6 +564,200 @@ export function claimBattlePassTier(
   return { ok: true, profile: next };
 }
 
+export const MAX_MATCH_CREDITS = 250;
+export const MAX_MATCH_XP = 50;
+export const TUTORIAL_REWARD_CREDITS = 150;
+export const TUTORIAL_REWARD_XP = 25;
+export const DEATH_RESPAWN_COOLDOWN_MS = 3000;
+export const KILL_CAM_DURATION_MS = 3000;
+export const DEATH_XP_PENALTY = 5;
+export const DEATH_CREDITS_PENALTY = 10;
+
+export interface KillRankBracket {
+  id: string;
+  label: string;
+  minKills: number;
+  maxKills: number | null;
+  xp: number;
+  credits: number;
+}
+
+export const KILL_RANK_TABLE: KillRankBracket[] = [
+  { id: 'rank_0', label: 'Recruit (0 Kills)', minKills: 0, maxKills: 0, xp: 0, credits: 0 },
+  { id: 'rank_1', label: 'Trooper (1-3 Kills)', minKills: 1, maxKills: 3, xp: 5, credits: 25 },
+  { id: 'rank_2', label: 'Vanguard (4-7 Kills)', minKills: 4, maxKills: 7, xp: 20, credits: 75 },
+  { id: 'rank_3', label: 'Striker (8-10 Kills)', minKills: 8, maxKills: 10, xp: 30, credits: 125 },
+  { id: 'rank_4', label: 'Apex (11-15 Kills)', minKills: 11, maxKills: 15, xp: 40, credits: 200 },
+  { id: 'rank_5', label: 'Legend (16+ Kills)', minKills: 16, maxKills: null, xp: 50, credits: 250 },
+];
+
+export function getKillRankReward(kills: number): KillRankBracket {
+  const safeKills = Math.max(0, Math.floor(kills));
+  for (const bracket of KILL_RANK_TABLE) {
+    if (
+      safeKills >= bracket.minKills &&
+      (bracket.maxKills === null || safeKills <= bracket.maxKills)
+    ) {
+      return bracket;
+    }
+  }
+  return KILL_RANK_TABLE[KILL_RANK_TABLE.length - 1];
+}
+
+export function calculateMatchRewards(params: {
+  won?: boolean;
+  tags: number;
+  deaths?: number;
+}): { creditsEarned: number; xpEarned: number; rankId: string } {
+  const safeTags = Math.max(0, Math.floor(params.tags));
+  const safeDeaths = Math.max(0, Math.floor(params.deaths ?? 0));
+  const bracket = getKillRankReward(safeTags);
+  const rawCredits = bracket.credits - safeDeaths * DEATH_CREDITS_PENALTY;
+  const rawXp = bracket.xp - safeDeaths * DEATH_XP_PENALTY;
+  return {
+    creditsEarned: Math.min(MAX_MATCH_CREDITS, Math.max(0, rawCredits)),
+    xpEarned: Math.min(MAX_MATCH_XP, Math.max(0, rawXp)),
+    rankId: bracket.id,
+  };
+}
+
+export interface KillCamSample {
+  t: number;
+  attackerX: number;
+  attackerY: number;
+  attackerZ: number;
+  attackerYaw: number;
+  victimX: number;
+  victimY: number;
+  victimZ: number;
+}
+
+export function sampleKillCamClip(
+  samples: KillCamSample[],
+  progress: number
+): KillCamSample | null {
+  if (samples.length === 0) return null;
+  if (samples.length === 1) return samples[0];
+
+  const clamped = Math.min(1, Math.max(0, progress));
+  const firstT = samples[0].t;
+  const lastT = samples[samples.length - 1].t;
+  const span = Math.max(1e-5, lastT - firstT);
+  const targetT = firstT + clamped * span;
+
+  for (let i = 0; i < samples.length - 1; i++) {
+    const a = samples[i];
+    const b = samples[i + 1];
+    if (targetT <= b.t || i === samples.length - 2) {
+      const segSpan = Math.max(1e-5, b.t - a.t);
+      const alpha = Math.min(1, Math.max(0, (targetT - a.t) / segSpan));
+      const yawDiff = Math.atan2(
+        Math.sin(b.attackerYaw - a.attackerYaw),
+        Math.cos(b.attackerYaw - a.attackerYaw)
+      );
+      return {
+        t: targetT,
+        attackerX: a.attackerX + (b.attackerX - a.attackerX) * alpha,
+        attackerY: a.attackerY + (b.attackerY - a.attackerY) * alpha,
+        attackerZ: a.attackerZ + (b.attackerZ - a.attackerZ) * alpha,
+        attackerYaw: a.attackerYaw + yawDiff * alpha,
+        victimX: a.victimX + (b.victimX - a.victimX) * alpha,
+        victimY: a.victimY + (b.victimY - a.victimY) * alpha,
+        victimZ: a.victimZ + (b.victimZ - a.victimZ) * alpha,
+      };
+    }
+  }
+
+  return samples[samples.length - 1];
+}
+
+export function applyTutorialCompletion(
+  profile: PlayerCloudProfile
+): PlayerCloudProfile {
+  if (profile.tutorialCompleted) {
+    return profile;
+  }
+  return {
+    ...profile,
+    tutorialCompleted: true,
+    credits: profile.credits + TUTORIAL_REWARD_CREDITS,
+    xp: profile.xp + TUTORIAL_REWARD_XP,
+    battlePassXp: profile.battlePassXp + TUTORIAL_REWARD_XP,
+    lastSyncedAt: new Date().toISOString(),
+  };
+}
+
+export function applyControllerDeadzone(
+  x: number,
+  y: number,
+  deadzone = 0.15
+): { x: number; y: number } {
+  const dz = Math.min(0.45, Math.max(0.02, deadzone));
+  const mag = Math.hypot(x, y);
+  if (mag <= dz || mag < 1e-6) {
+    return { x: 0, y: 0 };
+  }
+  const clamped = Math.min(1, mag);
+  const rescaled = (clamped - dz) / (1 - dz);
+  return {
+    x: (x / mag) * rescaled,
+    y: (y / mag) * rescaled,
+  };
+}
+
+export function mergeLocalAndCloudProfiles(
+  local: PlayerCloudProfile,
+  cloud: PlayerCloudProfile
+): PlayerCloudProfile {
+  if (local.accountId !== cloud.accountId) {
+    return {
+      ...cloud,
+      settings: { ...cloud.settings },
+      keybinds: { ...cloud.keybinds },
+    };
+  }
+
+  const localTs = Date.parse(local.lastSyncedAt || '') || 0;
+  const cloudTs = Date.parse(cloud.lastSyncedAt || '') || 0;
+  const localNewer = localTs > cloudTs;
+  const primary = localNewer ? local : cloud;
+
+  return {
+    ...primary,
+    accountId: cloud.accountId,
+    nickname: cloud.nickname,
+    credits: primary.credits,
+    xp: Math.max(local.xp, cloud.xp),
+    battlePassXp: Math.max(local.battlePassXp, cloud.battlePassXp),
+    battlePassPremium: local.battlePassPremium || cloud.battlePassPremium,
+    claimedFreeTiers: Array.from(
+      new Set([...cloud.claimedFreeTiers, ...local.claimedFreeTiers])
+    ).sort((a, b) => a - b),
+    claimedPremiumTiers: Array.from(
+      new Set([...cloud.claimedPremiumTiers, ...local.claimedPremiumTiers])
+    ).sort((a, b) => a - b),
+    unlockedWeaponSkins: Array.from(
+      new Set([...cloud.unlockedWeaponSkins, ...local.unlockedWeaponSkins])
+    ),
+    unlockedAvatarSkins: Array.from(
+      new Set([...cloud.unlockedAvatarSkins, ...local.unlockedAvatarSkins])
+    ),
+    tutorialCompleted: local.tutorialCompleted || cloud.tutorialCompleted,
+    easterEggUnlocked: local.easterEggUnlocked || cloud.easterEggUnlocked,
+    stats: {
+      matchesPlayed: Math.max(local.stats.matchesPlayed, cloud.stats.matchesPlayed),
+      wins: Math.max(local.stats.wins, cloud.stats.wins),
+      tags: Math.max(local.stats.tags, cloud.stats.tags),
+      deaths: Math.max(local.stats.deaths, cloud.stats.deaths),
+      shotsFired: Math.max(local.stats.shotsFired, cloud.stats.shotsFired),
+      shotsHit: Math.max(local.stats.shotsHit, cloud.stats.shotsHit),
+    },
+    settings: { ...primary.settings },
+    keybinds: { ...primary.keybinds },
+    lastSyncedAt: new Date(Math.max(localTs, cloudTs, Date.now())).toISOString(),
+  };
+}
+
 export function applyMatchRewards(
   profile: PlayerCloudProfile,
   summary: MatchSummary,
@@ -582,9 +776,9 @@ export function applyMatchRewards(
 
   return {
     ...profile,
-    credits: profile.credits + summary.creditsEarned,
-    xp: profile.xp + summary.xpEarned,
-    battlePassXp: profile.battlePassXp + summary.xpEarned,
+    credits: profile.credits + Math.min(MAX_MATCH_CREDITS, Math.max(0, summary.creditsEarned)),
+    xp: profile.xp + Math.min(MAX_MATCH_XP, Math.max(0, summary.xpEarned)),
+    battlePassXp: profile.battlePassXp + Math.min(MAX_MATCH_XP, Math.max(0, summary.xpEarned)),
     unlockedWeaponSkins: nextSkins,
     easterEggUnlocked,
     stats: {

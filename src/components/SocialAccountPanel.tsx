@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Cloud, RefreshCw, Send, UserPlus, Users, Mail } from 'lucide-react';
+import { Cloud, Mail, RefreshCw, Send, Trash2, UserPlus, Users } from 'lucide-react';
 import {
   ChatMessage,
   FriendEntry,
@@ -16,6 +16,7 @@ interface SocialPanelProps {
   chatMessages: ChatMessage[];
   lang: LanguageCode;
   onAddFriend: (nickname: string) => Promise<{ ok: boolean; error?: string }>;
+  onRemoveFriend: (nickname: string) => Promise<{ ok: boolean; error?: string }>;
   onInviteFriend: (nickname: string) => void;
   onJoinInvite: (invite: PartyInvite) => void;
   onSendChat: (text: string, channel: 'global' | 'party') => void;
@@ -27,6 +28,7 @@ export const SocialPanel: React.FC<SocialPanelProps> = ({
   chatMessages,
   lang,
   onAddFriend,
+  onRemoveFriend,
   onInviteFriend,
   onJoinInvite,
   onSendChat,
@@ -120,29 +122,52 @@ export const SocialPanel: React.FC<SocialPanelProps> = ({
           </div>
         )}
 
-        <div className="space-y-2">
-          {friends.map((f) => (
-            <div
-              key={f.nickname}
-              className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 px-3 py-2.5"
-            >
-              <div>
-                <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                  {f.nickname}
+        <div className="space-y-2" data-testid="friends-list">
+          {friends.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 px-4 py-5 text-center text-xs text-slate-600 dark:text-slate-400">
+              {t(lang, 'social.noFriends')}
+            </div>
+          ) : (
+            friends.map((f) => (
+              <div
+                key={f.nickname}
+                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 px-3 py-2.5"
+              >
+                <div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                    {f.nickname}
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    {f.platform} · {statusLabel(f.status)}
+                  </div>
                 </div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">
-                  {f.platform} · {statusLabel(f.status)}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onInviteFriend(f.nickname)}
+                    className="rounded bg-slate-200 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-cyan-500 hover:text-slate-950 transition-colors cursor-pointer"
+                  >
+                    {t(lang, 'social.invite')}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${f.nickname}`}
+                    onClick={async () => {
+                      const res = await onRemoveFriend(f.nickname);
+                      if (!res.ok) {
+                        setFriendMsg(res.error ?? 'Could not remove friend');
+                      } else {
+                        setFriendMsg(null);
+                      }
+                    }}
+                    className="flex h-7 w-7 items-center justify-center rounded border border-slate-300 dark:border-slate-700 text-slate-500 hover:border-rose-500/60 hover:bg-rose-500/10 hover:text-rose-500 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => onInviteFriend(f.nickname)}
-                className="rounded bg-slate-200 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-cyan-500 hover:text-slate-950 transition-colors cursor-pointer"
-              >
-                {t(lang, 'social.invite')}
-              </button>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
 
@@ -487,7 +512,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
               {t(lang, 'account.synced')}
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-400">
-              All credits, weapon &amp; avatar skins, Battle Pass tiers, keybinds, and Vault Easter Egg progress are saved to your Prism Cloud account.
+              All credits, XP, weapon &amp; avatar skins, Battle Pass tiers, settings, and Vault progress are saved locally on this device and synced to your Prism Cloud account.
             </p>
 
             <div>

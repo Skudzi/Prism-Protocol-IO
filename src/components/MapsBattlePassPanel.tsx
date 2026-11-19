@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Lock, Shuffle, Sun } from 'lucide-react';
+import { Check, Lock, Moon, Shuffle, Sun } from 'lucide-react';
 import { BATTLE_PASS_TIERS, MAP_LIST } from '../game/catalog';
 import { getBattlePassTier } from '../game/rules';
 import { LanguageCode, MapId, PlayerCloudProfile } from '../game/types';
@@ -72,10 +72,15 @@ export const MapsPanel: React.FC<MapsPanelProps> = ({
                 <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                   {t(lang, m.subtitleKey as Parameters<typeof t>[1])}
                 </p>
-                {m.isDaylight && (
+                {m.isDaylight ? (
                   <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-300">
                     <Sun className="h-3.5 w-3.5" />
                     <span>Daylight</span>
+                  </div>
+                ) : (
+                  <div className="mt-2 flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-300">
+                    <Moon className="h-3.5 w-3.5" />
+                    <span>Night / Arena</span>
                   </div>
                 )}
               </div>

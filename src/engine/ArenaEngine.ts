@@ -2,17 +2,23 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { AVATAR_SKINS, MAPS, WEAPONS, WEAPON_LIST, WEAPON_SKINS } from '../game/catalog';
 import {
+  applyControllerDeadzone,
   applyUnderfootJumpVelocity,
   calculateDamage,
+  calculateMatchRewards,
   canManualReload,
   canTriggerEasterEgg,
   canTriggerUnderfootJump,
   castLaserRay,
   checkHealOrbPickup,
+  DEATH_RESPAWN_COOLDOWN_MS,
   getHealOrbScheduleTimes,
+  KILL_CAM_DURATION_MS,
+  KillCamSample,
   pickOpenHealOrbPosition,
   RayTarget,
   resolvePlayerMovement,
+  sampleKillCamClip,
   shouldAutoReload,
   sortLeaderboardEntries,
 } from '../game/rules';
@@ -22,7 +28,9 @@ import {
   GameSettings,
   HealOrbState,
   Keybinds,
+  MapDef,
   MapId,
+  MapSpawn,
   MatchLeaderboardEntry,
   MatchSummary,
   MinimapSnapshot,
@@ -36,25 +44,34 @@ import {
   AnimatedAvatarRig,
   buildAvatarRig,
   buildBridgeStructure,
+  buildBuildingRoof,
+  buildBuildingWall,
+  buildConcreteWall,
   buildEasterEggMonolith,
   buildHealOrbModel,
   buildHouseStructure,
   buildJumpPad,
   buildPeekCover,
+  buildSquarePlatform,
   buildStreetLight,
   buildTexturedCrate,
   buildTreeModel,
   buildWeaponViewModel,
+  buildWoodenCrate,
   disposeAvatarRig,
 } from './models';
 import {
   createArenaFloorTextures,
   createBarrierTexture,
+  createConcreteWallTextures,
   createContactShadowTexture,
   createCrateTexture,
   createHouseFacadeTexture,
   createRoadTexture,
   createSkyDomeMaterial,
+  createTrampledFieldFloorTextures,
+  createTrampledPathOverlayTexture,
+  createWoodenCrateTextures,
 } from './textures';
 
 export interface HudSnapshot {
@@ -85,6 +102,12 @@ export interface HudSnapshot {
   tutorialDronesHit: number;
   easterEggUnlockedNow: boolean;
   isScoped: boolean;
+  isDead: boolean;
+  isKillCam: boolean;
+  killCamRemainingMs: number;
+  deathRespawnRemainingMs: number;
+  killedBy: string | null;
+  hasGamepad: boolean;
   killsFeed: Array<{ id: string; text: string }>;
   minimap: MinimapSnapshot;
 }
@@ -115,6 +138,8 @@ interface BotEntity {
   hitFlashTimer: number;
   kills: number;
   deaths: number;
+  poseHistory: KillCamSample[];
+  lastPoseSampleMs: number;
 }
 
 interface LaserBeamPoolItem {
@@ -149,6 +174,7 @@ export interface ArenaEngineCallbacks {
   onTutorialComplete: () => void;
   onEasterEggFound: () => void;
   onPauseRequested: () => void;
+  onResumeRequested?: () => void;
   onChatRequested: () => void;
   onWeaponChanged?: (weaponId: WeaponId) => void;
   onNetworkMove?: (x: number, y: number, z: number, yaw: number) => void;
@@ -288,6 +314,16 @@ export class ArenaEngine {
   private lastHitZone: 'head' | 'body' | null = null;
   private damageFlashMs = 0;
   private isScoped = false;
+  private rightMouseDown = false;
+  private isDead = false;
+  private killCamRemainingMs = 0;
+  private killCamClip: KillCamSample[] = [];
+  private killCamBeamOrigin = { x: 0, y: 1.3, z: 0 };
+  private killCamBeamEnd = { x: 0, y: 1.2, z: 0 };
+  private killCamBeamColor = '#ef4444';
+  private killCamBeamFired = false;
+  private deathRespawnRemainingMs = 0;
+  private killedBy: string | null = null;
   private killsFeed: Array<{ id: string; text: string }> = [];
 
   // Input & FPS state
@@ -295,6 +331,9 @@ export class ArenaEngine {
   private mouseDown = false;
   private draggingLook = false;
   private pointerLocked = false;
+  private prevGamepadButtons: boolean[] = [];
+  private gamepadTriggerFiring = false;
+  private hasGamepad = false;
   private lastNetSyncMs = 0;
   private lastHudEmitMs = 0;
   private tourAngle = 0;
@@ -470,7 +509,7 @@ export class ArenaEngine {
   }
 
   private onWheel = (e: WheelEvent) => {
-    if (this.screenState !== 'playing') return;
+    if (this.screenState !== 'playing' || this.isDead) return;
     const tag = (e.target as HTMLElement | null)?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     if (Math.abs(e.deltaY) < 1 && Math.abs(e.deltaX) < 1) return;
@@ -526,6 +565,19 @@ export class ArenaEngine {
       this.callbacks.onPauseRequested();
       return;
     }
+
+    if (this.isDead) {
+      if (
+        (e.code === 'Space' || e.code === 'Enter') &&
+        this.killCamRemainingMs <= 0 &&
+        this.deathRespawnRemainingMs <= 0
+      ) {
+        e.preventDefault();
+        this.respawnPlayer();
+      }
+      return;
+    }
+
     if (e.code === this.keybinds.chat) {
       e.preventDefault();
       document.exitPointerLock?.();
@@ -555,8 +607,9 @@ export class ArenaEngine {
   };
 
   private onMouseDown = (e: MouseEvent) => {
-    if (this.screenState !== 'playing') return;
+    if (this.screenState !== 'playing' || this.isDead) return;
     if (e.button === 2) {
+      this.rightMouseDown = true;
       this.isScoped = true;
       return;
     }
@@ -576,6 +629,7 @@ export class ArenaEngine {
 
   private onMouseUp = (e: MouseEvent) => {
     if (e.button === 2) {
+      this.rightMouseDown = false;
       this.isScoped = false;
     }
     if (e.button === 0) {
@@ -585,7 +639,7 @@ export class ArenaEngine {
   };
 
   private onMouseMove = (e: MouseEvent) => {
-    if (this.screenState !== 'playing') return;
+    if (this.screenState !== 'playing' || this.isDead) return;
     if (!this.pointerLocked && !this.draggingLook) return;
     const sens = 0.0022 * this.settings.mouseSensitivity * (this.isScoped ? 0.55 : 1);
     this.yaw -= e.movementX * sens;
@@ -677,10 +731,12 @@ export class ArenaEngine {
 
   public setScreenState(state: GameScreenState) {
     this.screenState = state;
-    this.weaponMount.visible = state === 'playing' && !this.isScoped;
+    this.weaponMount.visible = state === 'playing' && !this.isScoped && !this.isDead;
     if (state !== 'playing') {
       this.keysPressed.clear();
       this.mouseDown = false;
+      this.rightMouseDown = false;
+      this.gamepadTriggerFiring = false;
       this.isScoped = false;
       document.exitPointerLock?.();
     }
@@ -690,6 +746,18 @@ export class ArenaEngine {
     if (nickname.trim()) {
       this.playerNickname = nickname.trim();
     }
+  }
+
+  private pickTeamSpawn(map: MapDef, team?: 'cyan' | 'amber', indexHint?: number): MapSpawn {
+    const pool =
+      this.gameMode === 'tdm' && map.teamSpawns && team
+        ? map.teamSpawns[team]
+        : map.spawns;
+    const safePool = pool && pool.length > 0 ? pool : map.spawns;
+    if (indexHint !== undefined) {
+      return safePool[indexHint % safePool.length];
+    }
+    return safePool[Math.floor(Math.random() * safePool.length)];
   }
 
   public startMatch(
@@ -714,7 +782,10 @@ export class ArenaEngine {
     this.mapId = targetMap;
 
     const map = MAPS[targetMap];
-    const spawn = map.spawns[0];
+    const spawn =
+      this.gameMode === 'tdm'
+        ? this.pickTeamSpawn(map, 'cyan', 0)
+        : map.spawns[0];
     this.playerPos = { x: spawn.x, y: spawn.y, z: spawn.z };
     this.playerVel = { x: 0, y: 0, z: 0 };
     this.smoothMoveF = 0;
@@ -739,6 +810,16 @@ export class ArenaEngine {
     this.isReloading = false;
     this.reloadRemainingMs = 0;
     this.isScoped = false;
+    this.rightMouseDown = false;
+    this.gamepadTriggerFiring = false;
+    this.isDead = false;
+    this.killCamRemainingMs = 0;
+    this.killCamClip = [];
+    this.killCamBeamFired = false;
+    this.deathRespawnRemainingMs = 0;
+    this.killedBy = null;
+    this.camera.fov = this.settings.fov;
+    this.camera.updateProjectionMatrix();
     this.dashCharge = 100;
     this.tags = 0;
     this.deaths = 0;
@@ -761,6 +842,42 @@ export class ArenaEngine {
 
     this.spawnBots(isTutorial);
     this.emitHud(true);
+  }
+
+  public respawnPlayer(): boolean {
+    if (
+      !this.isDead ||
+      this.killCamRemainingMs > 0 ||
+      this.deathRespawnRemainingMs > 0 ||
+      this.screenState !== 'playing'
+    ) {
+      return false;
+    }
+    const map = MAPS[this.mapId];
+    const sp =
+      this.gameMode === 'tdm'
+        ? this.pickTeamSpawn(map, 'cyan')
+        : map.spawns[Math.floor(Math.random() * map.spawns.length)];
+    this.isDead = false;
+    this.killCamRemainingMs = 0;
+    this.killCamClip = [];
+    this.killCamBeamFired = false;
+    this.deathRespawnRemainingMs = 0;
+    this.killedBy = null;
+    this.hp = this.maxHp;
+    this.ammoByWeapon[this.weaponId] = WEAPONS[this.weaponId].magSize;
+    this.isReloading = false;
+    this.reloadRemainingMs = 0;
+    this.playerPos = { x: sp.x, y: sp.y, z: sp.z };
+    this.playerVel = { x: 0, y: 0, z: 0 };
+    this.grounded = true;
+    this.yaw = sp.yaw;
+    this.pitch = 0;
+    this.camera.fov = this.settings.fov;
+    this.camera.updateProjectionMatrix();
+    this.weaponMount.visible = true;
+    this.emitHud(true);
+    return true;
   }
 
   private clearHealOrbs() {
@@ -836,22 +953,27 @@ export class ArenaEngine {
     this.mapGroup.add(accentPoint);
 
     const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
-    const floorTex = createArenaFloorTextures(
-      map.floorColor,
-      map.accentColor,
-      maxAniso,
-      map.isOutdoor
-    );
+    const isTrampledField = map.floorStyle === 'trampled_earth';
+    const floorTex = isTrampledField
+      ? createTrampledFieldFloorTextures(maxAniso)
+      : createArenaFloorTextures(
+          map.floorColor,
+          map.accentColor,
+          maxAniso,
+          map.isOutdoor
+        );
     const floorMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       map: floorTex.map,
       bumpMap: floorTex.bumpMap,
-      bumpScale: 0.08,
-      roughness: map.isOutdoor ? 0.72 : 0.56,
-      metalness: map.isOutdoor ? 0.12 : 0.34,
+      bumpScale: isTrampledField ? 0.14 : 0.08,
+      roughness: isTrampledField ? 0.94 : map.isOutdoor ? 0.72 : 0.56,
+      metalness: isTrampledField ? 0.02 : map.isOutdoor ? 0.12 : 0.34,
     });
 
     const barrierTex = createBarrierTexture(map.wallColor, map.accentColor, maxAniso);
+    const concreteTex = isTrampledField ? createConcreteWallTextures(map.wallColor, maxAniso) : null;
+    const woodTex = isTrampledField ? createWoodenCrateTextures(maxAniso) : null;
 
     if (map.isOutdoor) {
       // Extended outdoor ground disc + solid arena perimeter parapet wall + distant cliff vista
@@ -866,17 +988,25 @@ export class ArenaEngine {
       const arenaSize = map.arenaHalfSize * 2;
       const borderMat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
-        map: barrierTex,
-        roughness: 0.72,
-        metalness: 0.25,
+        map: concreteTex ? concreteTex.map : barrierTex,
+        bumpMap: concreteTex?.bumpMap ?? null,
+        bumpScale: concreteTex ? 0.05 : 0,
+        roughness: isTrampledField ? 0.88 : 0.72,
+        metalness: isTrampledField ? 0.06 : 0.25,
       });
-      const borderTrimMat = new THREE.MeshStandardMaterial({
-        color: map.accentColor,
-        emissive: map.accentColor,
-        emissiveIntensity: 1.3,
-        roughness: 0.2,
-      });
-      const borderH = 2.6;
+      const borderTrimMat = isTrampledField
+        ? new THREE.MeshStandardMaterial({
+            color: 0x565b63,
+            roughness: 0.84,
+            metalness: 0.08,
+          })
+        : new THREE.MeshStandardMaterial({
+            color: map.accentColor,
+            emissive: map.accentColor,
+            emissiveIntensity: 1.3,
+            roughness: 0.2,
+          });
+      const borderH = isTrampledField ? 3.2 : 2.6;
       const borderDefs: Array<[number, number, number, number, boolean]> = [
         [0, -map.arenaHalfSize, arenaSize + 0.9, 0.9, true],
         [0, map.arenaHalfSize, arenaSize + 0.9, 0.9, true],
@@ -900,21 +1030,32 @@ export class ArenaEngine {
       }
 
       const cliffMat = new THREE.MeshStandardMaterial({
-        color: map.wallColor,
-        roughness: 0.9,
-        metalness: 0.06,
+        color: isTrampledField ? 0x6b5642 : map.wallColor,
+        roughness: 0.94,
+        metalness: 0.04,
+        flatShading: isTrampledField,
       });
       const ringCount = 32;
       for (let i = 0; i < ringCount; i++) {
         const ang = (i / ringCount) * Math.PI * 2;
-        const dist = map.arenaHalfSize + 6.2 + (i % 3) * 2.0;
+        const dist = isTrampledField
+          ? map.arenaHalfSize + 18 + (i % 3) * 5
+          : map.arenaHalfSize + 6.2 + (i % 3) * 2.0;
         const boulder = new THREE.Mesh(
-          new THREE.DodecahedronGeometry(3.8 + (i % 3) * 1.3, 1),
+          new THREE.DodecahedronGeometry(isTrampledField ? 5.2 + (i % 3) * 1.6 : 3.8 + (i % 3) * 1.3, isTrampledField ? 0 : 1),
           cliffMat
         );
-        boulder.position.set(Math.cos(ang) * dist, 1.5, Math.sin(ang) * dist);
+        boulder.position.set(
+          Math.cos(ang) * dist,
+          isTrampledField ? 0.9 : 1.5,
+          Math.sin(ang) * dist
+        );
         boulder.rotation.set(i * 0.35, ang, 0.2);
-        boulder.scale.set(1.3, 1.2 + (i % 2) * 0.5, 1.2);
+        if (isTrampledField) {
+          boulder.scale.set(2.4, 0.72 + (i % 3) * 0.25, 1.8);
+        } else {
+          boulder.scale.set(1.3, 1.2 + (i % 2) * 0.5, 1.2);
+        }
         boulder.receiveShadow = true;
         boulder.castShadow = true;
         this.mapGroup.add(boulder);
@@ -966,6 +1107,88 @@ export class ArenaEngine {
         beam.position.set(0, 9.6, i * (map.arenaHalfSize * 0.38));
         this.mapGroup.add(beam);
       }
+    }
+
+    // Trampled earth worn footpaths + building interior concrete slabs & TDM spawn zone strips for Map 1
+    if (isTrampledField && concreteTex) {
+      const pathTex = createTrampledPathOverlayTexture(maxAniso);
+      const pathMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        map: pathTex.map,
+        bumpMap: pathTex.bumpMap,
+        bumpScale: 0.1,
+        transparent: true,
+        roughness: 0.92,
+        metalness: 0.02,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      });
+
+      const addDirtPath = (x: number, z: number, w: number, len: number, rotZ = 0) => {
+        const strip = new THREE.Mesh(new THREE.PlaneGeometry(w, len), pathMat);
+        strip.rotation.x = -Math.PI / 2;
+        strip.rotation.z = rotZ;
+        strip.position.set(x, 0.032, z);
+        strip.receiveShadow = true;
+        this.mapGroup.add(strip);
+      };
+
+      // North-South heavily walked center path (Red Base -> Center Platform -> Blue Base)
+      addDirtPath(0, -33, 5.4, 52, 0);
+      addDirtPath(0, 33, 5.4, 52, 0);
+      // East-West cross trails linking West & East side building doorways across the courtyard
+      addDirtPath(0, -12, 4.4, 92, Math.PI / 2);
+      addDirtPath(0, 12, 4.4, 92, Math.PI / 2);
+      // Side base yard footpaths linking peek walls & spawns
+      addDirtPath(0, -56, 4.4, 42, Math.PI / 2);
+      addDirtPath(0, 56, 4.4, 42, Math.PI / 2);
+
+      // Poured concrete interior floor pads inside the two long enterable side buildings
+      const interiorFloorMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        map: concreteTex.map,
+        bumpMap: concreteTex.bumpMap,
+        bumpScale: 0.04,
+        roughness: 0.88,
+        metalness: 0.05,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+      });
+      for (const side of [-1, 1]) {
+        const pad = new THREE.Mesh(new THREE.PlaneGeometry(17.5, 94.6), interiorFloorMat);
+        pad.rotation.x = -Math.PI / 2;
+        pad.position.set(side * 55.35, 0.024, 0);
+        pad.receiveShadow = true;
+        this.mapGroup.add(pad);
+      }
+
+      // Subtle painted team zone strips at North (Red) and South (Blue) non-building bases
+      const blueZoneMat = new THREE.MeshStandardMaterial({
+        color: 0x2563eb,
+        roughness: 0.85,
+        polygonOffset: true,
+        polygonOffsetFactor: -3,
+        polygonOffsetUnits: -3,
+      });
+      const redZoneMat = new THREE.MeshStandardMaterial({
+        color: 0xdc2626,
+        roughness: 0.85,
+        polygonOffset: true,
+        polygonOffsetFactor: -3,
+        polygonOffsetUnits: -3,
+      });
+      const blueStrip = new THREE.Mesh(new THREE.PlaneGeometry(34, 1.4), blueZoneMat);
+      blueStrip.rotation.x = -Math.PI / 2;
+      blueStrip.position.set(0, 0.04, 62);
+      this.mapGroup.add(blueStrip);
+
+      const redStrip = new THREE.Mesh(new THREE.PlaneGeometry(34, 1.4), redZoneMat);
+      redStrip.rotation.x = -Math.PI / 2;
+      redStrip.position.set(0, 0.04, -62);
+      this.mapGroup.add(redStrip);
     }
 
     // Intersecting Boulevard Roads (elevated cleanly with polygonOffset so zero z-fighting occurs)
@@ -1109,9 +1332,22 @@ export class ArenaEngine {
       roughness: 0.22,
     });
 
+    const fallbackWoodTex = woodTex ?? createWoodenCrateTextures(maxAniso);
+    const fallbackConcreteTex = concreteTex ?? createConcreteWallTextures(map.wallColor, maxAniso);
+
     for (const obs of map.obstacles) {
       if (obs.kind === 'house') {
         this.mapGroup.add(buildHouseStructure(obs, facadeTex, map.accentColor));
+      } else if (obs.kind === 'wood_crate') {
+        this.mapGroup.add(buildWoodenCrate(obs, fallbackWoodTex.map, fallbackWoodTex.bumpMap));
+      } else if (obs.kind === 'concrete_wall') {
+        this.mapGroup.add(buildConcreteWall(obs, fallbackConcreteTex.map, fallbackConcreteTex.bumpMap));
+      } else if (obs.kind === 'building_wall') {
+        this.mapGroup.add(buildBuildingWall(obs, fallbackConcreteTex.map, fallbackConcreteTex.bumpMap));
+      } else if (obs.kind === 'building_roof') {
+        this.mapGroup.add(buildBuildingRoof(obs, fallbackConcreteTex.map, fallbackConcreteTex.bumpMap));
+      } else if (obs.kind === 'platform' && isTrampledField) {
+        this.mapGroup.add(buildSquarePlatform(obs, fallbackConcreteTex.map, fallbackConcreteTex.bumpMap));
       } else if (obs.kind === 'crate') {
         this.mapGroup.add(buildTexturedCrate(obs, crateTex, map.accentColor));
       } else if (obs.kind === 'peek_wall' || obs.kind === 'barrier') {
@@ -1198,6 +1434,8 @@ export class ArenaEngine {
           hitFlashTimer: 0,
           kills: 0,
           deaths: 0,
+          poseHistory: [],
+          lastPoseSampleMs: 0,
         });
       });
       return;
@@ -1212,11 +1450,11 @@ export class ArenaEngine {
     }> =
       this.gameMode === 'tdm'
         ? [
-            { name: 'AstraAlly', team: 'cyan', policy: 'flanker', skinIdx: 0, spawnIdx: 4 },
-            { name: 'PulseAlly', team: 'cyan', policy: 'charger', skinIdx: 2, spawnIdx: 5 },
-            { name: 'RiftBot', team: 'amber', policy: 'flanker', skinIdx: 1, spawnIdx: 1 },
-            { name: 'VexUnit', team: 'amber', policy: 'kiter', skinIdx: 3, spawnIdx: 2 },
-            { name: 'ApexFrame', team: 'amber', policy: 'charger', skinIdx: 4, spawnIdx: 3 },
+            { name: 'AstraAlly', team: 'cyan', policy: 'flanker', skinIdx: 0, spawnIdx: 1 },
+            { name: 'PulseAlly', team: 'cyan', policy: 'charger', skinIdx: 2, spawnIdx: 2 },
+            { name: 'RiftBot', team: 'amber', policy: 'flanker', skinIdx: 1, spawnIdx: 0 },
+            { name: 'VexUnit', team: 'amber', policy: 'kiter', skinIdx: 3, spawnIdx: 1 },
+            { name: 'ApexFrame', team: 'amber', policy: 'charger', skinIdx: 4, spawnIdx: 2 },
           ]
         : [
             { name: 'RiftBot', team: 'amber', policy: 'flanker', skinIdx: 1, spawnIdx: 1 },
@@ -1226,7 +1464,10 @@ export class ArenaEngine {
           ];
 
     for (const cfg of botConfigs) {
-      const sp = map.spawns[cfg.spawnIdx % map.spawns.length];
+      const sp =
+        this.gameMode === 'tdm'
+          ? this.pickTeamSpawn(map, cfg.team, cfg.spawnIdx)
+          : map.spawns[cfg.spawnIdx % map.spawns.length];
       const skin = AVATAR_SKINS[cfg.skinIdx % AVATAR_SKINS.length];
       const relation: 'ally' | 'enemy' =
         this.gameMode === 'tdm' && cfg.team === 'cyan' ? 'ally' : 'enemy';
@@ -1261,6 +1502,19 @@ export class ArenaEngine {
         hitFlashTimer: 0,
         kills: 0,
         deaths: 0,
+        poseHistory: [
+          {
+            t: performance.now() / 1000,
+            attackerX: sp.x,
+            attackerY: sp.y,
+            attackerZ: sp.z,
+            attackerYaw: sp.yaw,
+            victimX: this.playerPos.x,
+            victimY: this.playerPos.y,
+            victimZ: this.playerPos.z,
+          },
+        ],
+        lastPoseSampleMs: performance.now(),
       });
     }
   }
@@ -1411,7 +1665,7 @@ export class ArenaEngine {
   }
 
   private tryFire() {
-    if (this.screenState !== 'playing') return;
+    if (this.screenState !== 'playing' || this.isDead) return;
     if (this.isReloading) return;
 
     const now = performance.now();
@@ -1433,6 +1687,11 @@ export class ArenaEngine {
     this.recoilOffset = Math.min(0.12, this.recoilOffset + (weapon.id === 'helios_rail' ? 0.1 : 0.04));
     this.cameraTrauma = Math.min(1, this.cameraTrauma + (weapon.id === 'helios_rail' ? 0.28 : 0.12));
     soundEngine.playLaser(this.weaponId);
+    this.triggerRumble(
+      weapon.id === 'helios_rail' ? 0.5 : 0.22,
+      weapon.id === 'helios_rail' ? 0.65 : 0.18,
+      weapon.id === 'helios_rail' ? 120 : 55
+    );
 
     const map = MAPS[this.mapId];
     const camPos = {
@@ -1779,10 +2038,18 @@ export class ArenaEngine {
       return;
     }
 
+    if (this.screenState === 'paused') {
+      this.pollGamepad(dt, true);
+      return;
+    }
+
     if (this.screenState !== 'playing') return;
 
-    // Hide first-person weapon & hands whenever scoping
-    this.weaponMount.visible = !this.isScoped;
+    // Poll Gamepad API (supports pause, respawn, sticks, triggers, buttons, D-pad)
+    const padInput = this.pollGamepad(dt, false);
+
+    // Hide first-person weapon & hands whenever scoping or dead
+    this.weaponMount.visible = !this.isScoped && !this.isDead;
 
     // Hitstop freeze for heavy impacts while keeping shake/visuals alive
     this.cameraTrauma = Math.max(0, this.cameraTrauma - dt * 2.4);
@@ -1793,7 +2060,7 @@ export class ArenaEngine {
     this.underfootJumpCooldownMs = Math.max(0, this.underfootJumpCooldownMs - dt * 1000);
 
     // Magazine reload countdown
-    if (this.isReloading) {
+    if (this.isReloading && !this.isDead) {
       this.reloadRemainingMs -= dt * 1000;
       if (this.reloadRemainingMs <= 0) {
         this.ammoByWeapon[this.weaponId] = WEAPONS[this.weaponId].magSize;
@@ -1840,13 +2107,70 @@ export class ArenaEngine {
       }
     }
 
+    const map = MAPS[this.mapId];
+
+    // If eliminated, play 3s Kill Cam attacker perspective replay before showing Respawn screen
+    if (this.isDead) {
+      this.isScoped = false;
+      this.mouseDown = false;
+      this.gamepadTriggerFiring = false;
+
+      if (this.killCamRemainingMs > 0) {
+        this.killCamRemainingMs = Math.max(0, this.killCamRemainingMs - dt * 1000);
+        const progress = 1 - this.killCamRemainingMs / KILL_CAM_DURATION_MS;
+        const sample = sampleKillCamClip(this.killCamClip, progress);
+        if (sample) {
+          const fwdX = -Math.sin(sample.attackerYaw);
+          const fwdZ = -Math.cos(sample.attackerYaw);
+          const rightX = Math.cos(sample.attackerYaw);
+          const rightZ = -Math.sin(sample.attackerYaw);
+          this.camera.position.set(
+            sample.attackerX - fwdX * 0.68 + rightX * 0.22,
+            sample.attackerY + 1.66,
+            sample.attackerZ - fwdZ * 0.68 + rightZ * 0.22
+          );
+          this.camera.lookAt(sample.victimX, sample.victimY + 1.24, sample.victimZ);
+
+          const zoomFov = Math.max(54, this.settings.fov - 12 * Math.sin(progress * Math.PI * 0.5));
+          if (Math.abs(this.camera.fov - zoomFov) > 0.15) {
+            this.camera.fov = zoomFov;
+            this.camera.updateProjectionMatrix();
+          }
+        }
+        if (progress >= 0.72 && !this.killCamBeamFired) {
+          this.killCamBeamFired = true;
+          this.spawnBeam(this.killCamBeamOrigin, this.killCamBeamEnd, this.killCamBeamColor);
+          this.spawnSparks(this.killCamBeamEnd, 14);
+        }
+        if (this.killCamRemainingMs <= 0) {
+          this.camera.fov = this.settings.fov;
+          this.camera.updateProjectionMatrix();
+          this.emitHud(true);
+        }
+      } else {
+        this.deathRespawnRemainingMs = Math.max(0, this.deathRespawnRemainingMs - dt * 1000);
+        this.camera.position.set(
+          this.playerPos.x,
+          this.playerPos.y + 0.58,
+          this.playerPos.z
+        );
+        this.camera.rotation.set(this.pitch * 0.4 - 0.15, this.yaw, 0.22, 'YXZ');
+      }
+
+      this.updateBots(dt, map, nowMs);
+      if (nowMs - this.lastHudEmitMs > 100) {
+        this.emitHud(false);
+      }
+      return;
+    }
+
     // Dash recharge
     const weapon = WEAPONS[this.weaponId];
     this.dashCharge = Math.min(100, this.dashCharge + 24 * dt);
     if (this.dashTimer > 0) this.dashTimer -= dt;
 
-    // Continuous fire if held
-    if (this.mouseDown) {
+    // Continuous fire if held (mouse or controller trigger)
+    if (this.mouseDown || this.gamepadTriggerFiring) {
       this.tryFire();
     }
 
@@ -1856,13 +2180,15 @@ export class ArenaEngine {
     if (this.keysPressed.has('ArrowUp')) this.pitch = Math.min(1.2, this.pitch + 1.5 * dt);
     if (this.keysPressed.has('ArrowDown')) this.pitch = Math.max(-1.2, this.pitch - 1.5 * dt);
 
-    const inputF =
+    const keyF =
       (this.keysPressed.has(this.keybinds.moveForward) ? 1 : 0) -
       (this.keysPressed.has(this.keybinds.moveBackward) ? 1 : 0);
-    const inputR =
+    const keyR =
       (this.keysPressed.has(this.keybinds.moveRight) ? 1 : 0) -
       (this.keysPressed.has(this.keybinds.moveLeft) ? 1 : 0);
-    const jump = this.keysPressed.has(this.keybinds.jump);
+    const inputF = THREE.MathUtils.clamp(keyF + padInput.moveF, -1, 1);
+    const inputR = THREE.MathUtils.clamp(keyR + padInput.moveR, -1, 1);
+    const jump = this.keysPressed.has(this.keybinds.jump) || padInput.jump;
 
     const accelRate = inputF !== 0 || inputR !== 0 ? 15 : 13;
     this.smoothMoveF = THREE.MathUtils.damp(this.smoothMoveF, inputF, accelRate, dt);
@@ -1870,7 +2196,7 @@ export class ArenaEngine {
     const moveF = Math.abs(this.smoothMoveF) < 0.01 ? 0 : this.smoothMoveF;
     const moveR = Math.abs(this.smoothMoveR) < 0.01 ? 0 : this.smoothMoveR;
 
-    if (this.isTutorial && this.tutorialStep === 1 && (inputF !== 0 || inputR !== 0)) {
+    if (this.isTutorial && this.tutorialStep === 1 && (Math.abs(inputF) > 0.1 || Math.abs(inputR) > 0.1)) {
       this.tutorialMoved = true;
       this.tutorialStep = 2;
     }
@@ -1879,8 +2205,6 @@ export class ArenaEngine {
     const baseSpeed =
       8.4 * weapon.moveMultiplier * (this.dashTimer > 0 ? 1.85 : 1.0) * (this.isScoped ? 0.72 : 1.0);
     const speed = baseSpeed * inputMag;
-
-    const map = MAPS[this.mapId];
     const prevX = this.playerPos.x;
     const prevZ = this.playerPos.z;
     const resolved = resolvePlayerMovement(
@@ -2001,6 +2325,153 @@ export class ArenaEngine {
     }
   }
 
+  private triggerRumble(weak: number, strong: number, durationMs: number) {
+    if (!this.settings.controllerEnabled || !this.settings.controllerVibration) return;
+    try {
+      const pads = navigator.getGamepads?.();
+      if (!pads) return;
+      for (const pad of pads) {
+        if (pad && pad.connected) {
+          const actuator = (
+            pad as Gamepad & {
+              vibrationActuator?: {
+                playEffect?: (type: string, params: Record<string, number>) => Promise<void>;
+              };
+            }
+          ).vibrationActuator;
+          void actuator?.playEffect?.('dual-rumble', {
+            startDelay: 0,
+            duration: durationMs,
+            weakMagnitude: Math.min(1, Math.max(0, weak)),
+            strongMagnitude: Math.min(1, Math.max(0, strong)),
+          });
+          break;
+        }
+      }
+    } catch {
+      // Ignore unsupported vibration APIs
+    }
+  }
+
+  private pollGamepad(
+    dt: number,
+    allowPauseOnly: boolean
+  ): { moveF: number; moveR: number; jump: boolean } {
+    const pads = typeof navigator !== 'undefined' ? navigator.getGamepads?.() : null;
+    let gp: Gamepad | null = null;
+    if (pads) {
+      for (const candidate of pads) {
+        if (candidate && candidate.connected) {
+          gp = candidate;
+          break;
+        }
+      }
+    }
+    this.hasGamepad = Boolean(gp);
+    if (!gp || !this.settings.controllerEnabled) {
+      this.gamepadTriggerFiring = false;
+      this.prevGamepadButtons = [];
+      return { moveF: 0, moveR: 0, jump: false };
+    }
+
+    const pressed = gp.buttons.map((b) => Boolean(b?.pressed));
+    const justPressed = (idx: number) => Boolean(pressed[idx] && !this.prevGamepadButtons[idx]);
+
+    // Start / Options toggles pause or resume
+    if (justPressed(9)) {
+      this.prevGamepadButtons = pressed;
+      if (allowPauseOnly) {
+        this.callbacks.onResumeRequested?.();
+      } else {
+        document.exitPointerLock?.();
+        this.callbacks.onPauseRequested();
+      }
+      return { moveF: 0, moveR: 0, jump: false };
+    }
+
+    if (allowPauseOnly) {
+      this.prevGamepadButtons = pressed;
+      this.gamepadTriggerFiring = false;
+      return { moveF: 0, moveR: 0, jump: false };
+    }
+
+    if (this.isDead) {
+      if (justPressed(0) && this.killCamRemainingMs <= 0 && this.deathRespawnRemainingMs <= 0) {
+        this.respawnPlayer();
+      }
+      this.prevGamepadButtons = pressed;
+      this.gamepadTriggerFiring = false;
+      return { moveF: 0, moveR: 0, jump: false };
+    }
+
+    // Select / Share toggles chat
+    if (justPressed(8)) {
+      this.callbacks.onChatRequested();
+    }
+
+    // D-Pad 12/13/14/15 -> weapons 1-4
+    if (justPressed(12)) this.setWeapon('pulse_carbine');
+    if (justPressed(15)) this.setWeapon('volt_scatter');
+    if (justPressed(13)) this.setWeapon('helios_rail');
+    if (justPressed(14)) this.setWeapon('arc_repeater');
+
+    // Y / Triangle (3) or RB / R1 (5) -> cycle weapon
+    if (justPressed(3) || justPressed(5)) {
+      const idx = WEAPON_LIST.findIndex((w) => w.id === this.weaponId);
+      const next = WEAPON_LIST[(idx + 1) % WEAPON_LIST.length];
+      this.setWeapon(next.id);
+    }
+
+    // X / Square (2) -> manual reload
+    if (justPressed(2)) {
+      const weapon = WEAPONS[this.weaponId];
+      const currentAmmo = this.ammoByWeapon[this.weaponId];
+      if (canManualReload(currentAmmo, weapon.magSize, this.isReloading)) {
+        this.startReload();
+      }
+    }
+
+    // B / Circle (1) or LB / L1 (4) -> Dash
+    if ((justPressed(1) || justPressed(4)) && this.dashCharge >= 50 && this.dashTimer <= 0) {
+      this.dashCharge -= 50;
+      this.dashTimer = 0.22;
+      soundEngine.playDash();
+    }
+
+    // LT / L2 (6) -> Scope / ADS
+    const ltDown = (gp.buttons[6]?.value ?? 0) > 0.35;
+    this.isScoped = ltDown || this.rightMouseDown;
+
+    // RT / R2 (7) -> Fire
+    this.gamepadTriggerFiring = (gp.buttons[7]?.value ?? 0) > 0.35;
+
+    // Left stick move + Right stick look with deadzone + quadratic curve
+    const dz = this.settings.controllerDeadzone ?? 0.15;
+    const stickL = applyControllerDeadzone(gp.axes[0] ?? 0, gp.axes[1] ?? 0, dz);
+    const stickR = applyControllerDeadzone(gp.axes[2] ?? 0, gp.axes[3] ?? 0, dz);
+
+    const rMag = Math.hypot(stickR.x, stickR.y);
+    if (rMag > 0.001) {
+      const curve = Math.pow(rMag, 1.35) / rMag;
+      const lookSpeed =
+        2.75 * this.settings.controllerSensitivity * (this.isScoped ? 0.55 : 1.0);
+      const ySign = this.settings.controllerInvertY ? 1 : -1;
+      this.yaw -= stickR.x * curve * lookSpeed * dt;
+      this.pitch = THREE.MathUtils.clamp(
+        this.pitch + stickR.y * curve * ySign * lookSpeed * 0.78 * dt,
+        -1.35,
+        1.35
+      );
+    }
+
+    this.prevGamepadButtons = pressed;
+    return {
+      moveF: -stickL.y,
+      moveR: stickL.x,
+      jump: Boolean(pressed[0]),
+    };
+  }
+
   private updateBots(dt: number, map: (typeof MAPS)[MapId], nowMs: number) {
     const lerpAngle = (current: number, target: number, alpha: number) => {
       const diff = Math.atan2(Math.sin(target - current), Math.cos(target - current));
@@ -2013,7 +2484,10 @@ export class ArenaEngine {
         if (!this.isTutorial) {
           bot.respawnTimer -= dt;
           if (bot.respawnTimer <= 0) {
-            const sp = map.spawns[Math.floor(Math.random() * map.spawns.length)];
+            const sp =
+              this.gameMode === 'tdm'
+                ? this.pickTeamSpawn(map, bot.team)
+                : map.spawns[Math.floor(Math.random() * map.spawns.length)];
             bot.x = sp.x;
             bot.y = sp.y;
             bot.z = sp.z;
@@ -2021,9 +2495,12 @@ export class ArenaEngine {
             bot.vz = 0;
             bot.velY = 0;
             bot.grounded = true;
+            bot.yaw = sp.yaw;
             bot.hp = bot.maxHp;
             bot.alive = true;
             bot.rig.group.visible = true;
+            bot.poseHistory = [];
+            bot.lastPoseSampleMs = 0;
           }
         }
         continue;
@@ -2187,6 +2664,23 @@ export class ArenaEngine {
       const elevPitch = THREE.MathUtils.clamp((targetY - bot.y) / Math.max(4, dist), -0.35, 0.35);
       bot.rig.head.rotation.x = THREE.MathUtils.damp(bot.rig.head.rotation.x, -elevPitch, 8, dt);
 
+      if (nowMs - bot.lastPoseSampleMs >= 45) {
+        bot.lastPoseSampleMs = nowMs;
+        bot.poseHistory.push({
+          t: nowMs / 1000,
+          attackerX: bot.x,
+          attackerY: bot.y,
+          attackerZ: bot.z,
+          attackerYaw: bot.yaw,
+          victimX: this.playerPos.x,
+          victimY: this.playerPos.y,
+          victimZ: this.playerPos.z,
+        });
+        if (bot.poseHistory.length > 75) {
+          bot.poseHistory.shift();
+        }
+      }
+
       // Bot laser fire with clear sight check
       bot.fireCooldown -= dt;
       if (bot.fireCooldown <= 0 && dist < 38) {
@@ -2207,7 +2701,7 @@ export class ArenaEngine {
                 y: targetY + 1.2,
                 z: targetZ + (Math.random() - 0.5) * 2.2,
               };
-          this.spawnBeam(origin, endPoint, bot.team === 'cyan' ? '#38bdf8' : '#f59e0b');
+          this.spawnBeam(origin, endPoint, bot.team === 'cyan' ? '#38bdf8' : '#ef4444');
 
           if (hitTarget) {
             if (targetBot) {
@@ -2235,29 +2729,57 @@ export class ArenaEngine {
                 ];
               }
             } else {
-              // Target is the human player
-              this.hp -= 12;
-              this.damageFlashMs = 240;
-              this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.22);
-              if (this.hp <= 0) {
-                this.deaths++;
-                bot.kills++;
-                if (this.gameMode === 'tdm') {
-                  this.teamScoreAmber += 1;
+              // Target is the human player (skip if already awaiting respawn)
+              if (!this.isDead) {
+                this.hp -= 12;
+                this.damageFlashMs = 240;
+                this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.22);
+                this.triggerRumble(0.28, 0.4, 90);
+                if (this.hp <= 0) {
+                  this.hp = 0;
+                  this.isDead = true;
+                  this.killCamRemainingMs = KILL_CAM_DURATION_MS;
+                  this.deathRespawnRemainingMs = 0;
+                  this.killCamClip = [
+                    ...bot.poseHistory,
+                    {
+                      t: nowMs / 1000,
+                      attackerX: bot.x,
+                      attackerY: bot.y,
+                      attackerZ: bot.z,
+                      attackerYaw: bot.yaw,
+                      victimX: this.playerPos.x,
+                      victimY: this.playerPos.y,
+                      victimZ: this.playerPos.z,
+                    },
+                  ];
+                  this.killCamBeamOrigin = { ...origin };
+                  this.killCamBeamEnd = { ...endPoint };
+                  this.killCamBeamColor = bot.team === 'cyan' ? '#38bdf8' : '#ef4444';
+                  this.killCamBeamFired = false;
+                  this.killedBy = bot.nickname;
+                  this.deaths++;
+                  bot.kills++;
+                  if (this.gameMode === 'tdm') {
+                    this.teamScoreAmber += 1;
+                  }
+                  this.isScoped = false;
+                  this.rightMouseDown = false;
+                  this.mouseDown = false;
+                  this.gamepadTriggerFiring = false;
+                  this.isReloading = false;
+                  this.reloadRemainingMs = 0;
+                  document.exitPointerLock?.();
+                  this.triggerRumble(0.85, 0.95, 250);
+                  this.killsFeed = [
+                    {
+                      id: `${nowMs}-${bot.id}-player`,
+                      text: `${bot.nickname} tagged You`,
+                    },
+                    ...this.killsFeed.slice(0, 3),
+                  ];
+                  this.emitHud(true);
                 }
-                this.hp = 100;
-                this.ammoByWeapon[this.weaponId] = WEAPONS[this.weaponId].magSize;
-                this.isReloading = false;
-                this.reloadRemainingMs = 0;
-                const sp = map.spawns[Math.floor(Math.random() * map.spawns.length)];
-                this.playerPos = { x: sp.x, y: sp.y, z: sp.z };
-                this.killsFeed = [
-                  {
-                    id: `${nowMs}-${bot.id}-player`,
-                    text: `${bot.nickname} tagged You`,
-                  },
-                  ...this.killsFeed.slice(0, 3),
-                ];
               }
             }
           }
@@ -2268,6 +2790,14 @@ export class ArenaEngine {
 
   private finishMatch() {
     this.screenState = 'gameover';
+    this.isDead = false;
+    this.killCamRemainingMs = 0;
+    this.killCamClip = [];
+    this.killCamBeamFired = false;
+    this.deathRespawnRemainingMs = 0;
+    this.killedBy = null;
+    this.camera.fov = this.settings.fov;
+    this.camera.updateProjectionMatrix();
     this.weaponMount.visible = false;
     document.exitPointerLock?.();
 
@@ -2277,12 +2807,11 @@ export class ArenaEngine {
       this.gameMode === 'tdm'
         ? this.teamScoreCyan >= this.teamScoreAmber
         : this.tags >= this.deaths;
-    const creditsEarned =
-      120 +
-      this.tags * 35 +
-      (won ? 100 : 0) +
-      (this.easterEggTriggered ? 500 : 0);
-    const xpEarned = 180 + this.tags * 25 + (won ? 90 : 0);
+    const { creditsEarned, xpEarned } = calculateMatchRewards({
+      won,
+      tags: this.tags,
+      deaths: this.deaths,
+    });
 
     let leaderboard: MatchLeaderboardEntry[] | undefined;
     if (this.gameMode === 'tdm') {
@@ -2382,6 +2911,12 @@ export class ArenaEngine {
       tutorialDronesHit: this.tutorialDronesHit,
       easterEggUnlockedNow: this.easterEggTriggered,
       isScoped: this.isScoped,
+      isDead: this.isDead,
+      isKillCam: this.isDead && this.killCamRemainingMs > 0,
+      killCamRemainingMs: Math.round(this.killCamRemainingMs),
+      deathRespawnRemainingMs: Math.round(this.deathRespawnRemainingMs),
+      killedBy: this.killedBy,
+      hasGamepad: this.hasGamepad,
       killsFeed: this.killsFeed,
       minimap: {
         mapId: this.mapId,

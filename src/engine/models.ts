@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { AvatarSkinDef, MapObstacle, WeaponId, WeaponSkinDef } from '../game/types';
-import { createWeaponPatternTexture, createWoodGrainTexture } from './textures';
+import {
+  createArmorPBRTextures,
+  createGripKnurlTextures,
+  createWeaponPBRTextures,
+  createWoodGrainPBRTextures,
+} from './textures';
 
 export interface AnimatedAvatarRig {
   group: THREE.Group;
@@ -91,42 +96,78 @@ export function buildWeaponViewModel(
   avatarSkin?: AvatarSkinDef
 ): THREE.Group {
   const group = new THREE.Group();
-  const patternTex = createWeaponPatternTexture(skin);
+  const pbr = createWeaponPBRTextures(skin);
+  const knurl = createGripKnurlTextures();
+  const isClearcoat =
+    skin.pattern === 'rainbow' ||
+    skin.pattern === 'prism_holo' ||
+    skin.pattern === 'gold_walnut' ||
+    skin.pattern === 'hex_carbon';
 
-  const bodyMat = new THREE.MeshStandardMaterial({
+  const bodyMat = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
-    map: patternTex,
+    map: pbr.map,
+    bumpMap: pbr.bumpMap,
+    bumpScale: skin.pattern === 'gold_walnut' ? 0.014 : 0.009,
+    roughnessMap: pbr.roughnessMap,
     metalness: skin.metalness,
     roughness: skin.roughness,
+    clearcoat: isClearcoat ? 0.88 : 0.28,
+    clearcoatRoughness: skin.pattern === 'rainbow' || skin.pattern === 'prism_holo' ? 0.08 : 0.18,
+    reflectivity: 0.92,
   });
-  const trimMat = new THREE.MeshStandardMaterial({
+  const trimMat = new THREE.MeshPhysicalMaterial({
     color: skin.secondaryColor,
-    metalness: Math.min(0.96, skin.metalness + 0.1),
-    roughness: Math.max(0.14, skin.roughness - 0.08),
+    bumpMap: pbr.bumpMap,
+    bumpScale: 0.006,
+    metalness: Math.min(0.98, skin.metalness + 0.12),
+    roughness: Math.max(0.12, skin.roughness - 0.08),
+    clearcoat: isClearcoat ? 0.65 : 0.2,
+    clearcoatRoughness: 0.15,
   });
   const coreMat = new THREE.MeshStandardMaterial({
     color: skin.emissiveColor,
     emissive: skin.emissiveColor,
-    emissiveIntensity: 2.3,
-    roughness: 0.14,
-    metalness: 0.2,
+    emissiveIntensity: 2.2,
+    roughness: 0.12,
+    metalness: 0.25,
   });
 
   const isWoodGrip = skin.pattern === 'gold_walnut';
-  const woodTex = isWoodGrip ? createWoodGrainTexture() : null;
+  const woodPbr = isWoodGrip ? createWoodGrainPBRTextures() : null;
 
-  const gripMat = new THREE.MeshStandardMaterial({
+  const gripMat = new THREE.MeshPhysicalMaterial({
     color: isWoodGrip ? 0xffffff : skin.gripColor,
-    map: woodTex,
-    roughness: isWoodGrip ? 0.56 : 0.82,
-    metalness: isWoodGrip ? 0.06 : 0.12,
+    map: woodPbr?.map ?? null,
+    bumpMap: woodPbr?.bumpMap ?? knurl.bumpMap,
+    bumpScale: isWoodGrip ? 0.012 : 0.016,
+    roughnessMap: woodPbr?.roughnessMap ?? knurl.roughnessMap,
+    roughness: isWoodGrip ? 0.44 : 0.78,
+    metalness: isWoodGrip ? 0.05 : 0.12,
+    clearcoat: isWoodGrip ? 0.68 : 0.08,
+    clearcoatRoughness: 0.22,
   });
 
-  const scopeMat = new THREE.MeshStandardMaterial({
+  const scopeMat = new THREE.MeshPhysicalMaterial({
     color: isWoodGrip ? 0xffffff : skin.scopeColor,
-    map: woodTex,
-    roughness: isWoodGrip ? 0.45 : 0.28,
-    metalness: isWoodGrip ? 0.15 : 0.72,
+    map: woodPbr?.map ?? null,
+    bumpMap: woodPbr?.bumpMap ?? null,
+    bumpScale: isWoodGrip ? 0.01 : 0,
+    roughness: isWoodGrip ? 0.36 : 0.24,
+    metalness: isWoodGrip ? 0.22 : 0.82,
+    clearcoat: 0.75,
+    clearcoatRoughness: 0.12,
+  });
+
+  const opticGlassMat = new THREE.MeshPhysicalMaterial({
+    color: skin.emissiveColor,
+    emissive: skin.emissiveColor,
+    emissiveIntensity: 0.75,
+    metalness: 0.15,
+    roughness: 0.06,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.04,
+    reflectivity: 1.0,
   });
 
   if (weaponId === 'helios_rail') {
@@ -137,6 +178,13 @@ export function buildWeaponViewModel(
     upperRail.position.set(0, 0.082, -0.26);
     group.add(upperRail);
 
+    // Picatinny rail teeth & barrel cooling ports
+    for (let rz = -0.58; rz <= 0.06; rz += 0.065) {
+      const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.014, 0.03), trimMat);
+      tooth.position.set(0, 0.106, rz);
+      group.add(tooth);
+    }
+
     const lowerRail = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.035, 0.82), trimMat);
     lowerRail.position.set(0, -0.046, -0.25);
     group.add(lowerRail);
@@ -146,20 +194,33 @@ export function buildWeaponViewModel(
     plasmaCore.position.set(0, 0.018, -0.23);
     group.add(plasmaCore);
 
-    // Detailed scope housing + lens
+    const muzzleBrake = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.034, 0.09, 12), trimMat);
+    muzzleBrake.rotation.x = Math.PI / 2;
+    muzzleBrake.position.set(0, 0.018, -0.66);
+    group.add(muzzleBrake);
+
+    // Detailed scope housing + coated objective & ocular lenses
     const scopeTube = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.034, 0.28, 16), scopeMat);
     scopeTube.rotation.x = Math.PI / 2;
-    scopeTube.position.set(0, 0.138, -0.02);
+    scopeTube.position.set(0, 0.144, -0.02);
     group.add(scopeTube);
 
-    const scopeRing = new THREE.Mesh(new THREE.TorusGeometry(0.032, 0.005, 8, 16), trimMat);
-    scopeRing.position.set(0, 0.138, -0.14);
+    const scopeTurret = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.03, 12), trimMat);
+    scopeTurret.position.set(0, 0.178, -0.02);
+    group.add(scopeTurret);
+
+    const scopeRing = new THREE.Mesh(new THREE.TorusGeometry(0.033, 0.005, 8, 16), trimMat);
+    scopeRing.position.set(0, 0.144, -0.14);
     group.add(scopeRing);
 
-    const scopeLens = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.02, 14), coreMat);
+    const scopeLens = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.018, 14), opticGlassMat);
     scopeLens.rotation.x = Math.PI / 2;
-    scopeLens.position.set(0, 0.138, 0.12);
+    scopeLens.position.set(0, 0.144, 0.12);
     group.add(scopeLens);
+
+    const triggerGuard = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.048, 0.075), trimMat);
+    triggerGuard.position.set(0, -0.088, 0.06);
+    group.add(triggerGuard);
 
     const grip = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.16, 0.09), gripMat);
     grip.position.set(0, -0.12, 0.14);
@@ -172,6 +233,10 @@ export function buildWeaponViewModel(
   } else if (weaponId === 'volt_scatter') {
     const chassis = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.52), bodyMat);
     group.add(chassis);
+
+    const topRail = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.018, 0.44), trimMat);
+    topRail.position.set(0, 0.078, -0.06);
+    group.add(topRail);
 
     const leftBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.036, 0.45, 14), trimMat);
     leftBarrel.rotation.x = Math.PI / 2;
@@ -188,8 +253,12 @@ export function buildWeaponViewModel(
     group.add(powerCell);
 
     const optic = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.14), scopeMat);
-    optic.position.set(0, 0.095, 0.02);
+    optic.position.set(0, 0.105, 0.02);
     group.add(optic);
+
+    const opticLens = new THREE.Mesh(new THREE.PlaneGeometry(0.042, 0.032), opticGlassMat);
+    opticLens.position.set(0, 0.105, 0.092);
+    group.add(opticLens);
 
     const pump = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.06, 0.24), gripMat);
     pump.position.set(0, -0.06, -0.24);
@@ -207,6 +276,11 @@ export function buildWeaponViewModel(
     shroud.position.set(0, 0.01, -0.24);
     group.add(shroud);
 
+    const muzzleTip = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.028, 0.08, 12), trimMat);
+    muzzleTip.rotation.x = Math.PI / 2;
+    muzzleTip.position.set(0, 0.01, -0.4);
+    group.add(muzzleTip);
+
     const arcStripL = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.025, 0.34), coreMat);
     arcStripL.position.set(-0.056, 0.02, -0.08);
     group.add(arcStripL);
@@ -219,6 +293,10 @@ export function buildWeaponViewModel(
     reflex.position.set(0, 0.095, -0.02);
     group.add(reflex);
 
+    const reflexLens = new THREE.Mesh(new THREE.CircleGeometry(0.023, 14), opticGlassMat);
+    reflexLens.position.set(0, 0.095, -0.02);
+    group.add(reflexLens);
+
     const mag = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.18, 0.065), gripMat);
     mag.position.set(0, -0.14, -0.06);
     mag.rotation.x = -0.18;
@@ -226,6 +304,11 @@ export function buildWeaponViewModel(
   } else {
     const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.115, 0.13, 0.52), bodyMat);
     group.add(receiver);
+
+    // Top picatinny tactical rail
+    const railBar = new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.018, 0.44), trimMat);
+    railBar.position.set(0, 0.072, -0.04);
+    group.add(railBar);
 
     const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.03, 0.44, 14), trimMat);
     barrel.rotation.x = Math.PI / 2;
@@ -242,8 +325,17 @@ export function buildWeaponViewModel(
 
     const scopeBody = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.026, 0.18, 12), scopeMat);
     scopeBody.rotation.x = Math.PI / 2;
-    scopeBody.position.set(0, 0.1, -0.02);
+    scopeBody.position.set(0, 0.105, -0.02);
     group.add(scopeBody);
+
+    const scopeLens = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.014, 12), opticGlassMat);
+    scopeLens.rotation.x = Math.PI / 2;
+    scopeLens.position.set(0, 0.105, 0.07);
+    group.add(scopeLens);
+
+    const triggerGuard = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.045, 0.072), trimMat);
+    triggerGuard.position.set(0, -0.084, 0.06);
+    group.add(triggerGuard);
 
     const foregrip = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.11, 0.075), gripMat);
     foregrip.position.set(0, -0.1, -0.18);
@@ -255,19 +347,33 @@ export function buildWeaponViewModel(
     group.add(grip);
   }
 
-  // First-person Tactical Gloved Hands & Forearm Sleeves holding the weapon
+  // First-person Tactical Gloved Hands & Cordura Forearm Sleeves holding the weapon
+  const sleevePbr = createArmorPBRTextures(
+    avatarSkin?.clothingColor ?? '#334155',
+    avatarSkin?.trimColor ?? '#38bdf8',
+    'cloth'
+  );
   const sleeveMat = new THREE.MeshStandardMaterial({
-    color: avatarSkin?.clothingColor ?? '#334155',
+    color: 0xffffff,
+    map: sleevePbr.map,
+    bumpMap: sleevePbr.bumpMap,
+    bumpScale: 0.01,
+    roughnessMap: sleevePbr.roughnessMap,
     roughness: 0.85,
     metalness: 0.08,
   });
-  const cuffMat = new THREE.MeshStandardMaterial({
+  const cuffMat = new THREE.MeshPhysicalMaterial({
     color: avatarSkin?.armorColor ?? '#1e293b',
-    roughness: 0.42,
-    metalness: 0.6,
+    roughness: 0.34,
+    metalness: 0.68,
+    clearcoat: 0.55,
+    clearcoatRoughness: 0.18,
   });
   const gloveMat = new THREE.MeshStandardMaterial({
     color: '#18181b',
+    bumpMap: knurl.bumpMap,
+    bumpScale: 0.014,
+    roughnessMap: knurl.roughnessMap,
     roughness: 0.72,
     metalness: 0.14,
   });
@@ -358,16 +464,15 @@ export function buildAvatarRig(
 ): AnimatedAvatarRig {
   const group = new THREE.Group();
 
-  const outlineColorHex = relation === 'ally' ? 0x3b82f6 : 0xef4444;
   const outlineMat = new THREE.MeshBasicMaterial({
-    color: outlineColorHex,
+    color: relation === 'ally' ? 0x38bdf8 : 0xef4444,
     side: THREE.BackSide,
     toneMapped: false,
     fog: false,
   });
 
-  // Teammates (TDM allies) get a hollow blue silhouette line visible through walls;
-  // enemies remain strictly occluded behind geometry.
+  // Teammates (TDM allies) show normal realistic PBR armor in open sight and
+  // ONLY a crisp thin blue silhouette line around them when occluded behind walls/barriers.
   const xrayMaskMat =
     relation === 'ally'
       ? new THREE.MeshBasicMaterial({
@@ -404,73 +509,80 @@ export function buildAvatarRig(
   const addOutlineShell = (
     parent: THREE.Object3D,
     sourceMesh: THREE.Mesh,
-    sx = 1.11,
-    sy = 1.07,
-    sz = 1.11
+    _sx = 1.05,
+    _sy = 1.03,
+    _sz = 1.05
   ) => {
-    const shell = new THREE.Mesh(sourceMesh.geometry, outlineMat);
-    shell.position.copy(sourceMesh.position);
-    shell.rotation.copy(sourceMesh.rotation);
-    shell.scale.set(
-      sourceMesh.scale.x * sx,
-      sourceMesh.scale.y * sy,
-      sourceMesh.scale.z * sz
-    );
-    shell.castShadow = false;
-    shell.receiveShadow = false;
-    parent.add(shell);
-
-    if (xrayMaskMat && xrayOutlineMat) {
-      const mask = new THREE.Mesh(sourceMesh.geometry, xrayMaskMat);
-      mask.position.copy(sourceMesh.position);
-      mask.rotation.copy(sourceMesh.rotation);
-      mask.scale.copy(sourceMesh.scale);
-      mask.renderOrder = 8;
-      mask.castShadow = false;
-      mask.receiveShadow = false;
-      parent.add(mask);
-
-      const xrayShell = new THREE.Mesh(sourceMesh.geometry, xrayOutlineMat);
-      xrayShell.position.copy(sourceMesh.position);
-      xrayShell.rotation.copy(sourceMesh.rotation);
-      xrayShell.scale.set(
-        sourceMesh.scale.x * (sx * 1.03),
-        sourceMesh.scale.y * (sy * 1.02),
-        sourceMesh.scale.z * (sz * 1.03)
-      );
-      xrayShell.renderOrder = 9;
-      xrayShell.castShadow = false;
-      xrayShell.receiveShadow = false;
-      parent.add(xrayShell);
+    if (relation !== 'ally' || !xrayMaskMat || !xrayOutlineMat) {
+      return;
     }
+
+    const mask = new THREE.Mesh(sourceMesh.geometry, xrayMaskMat);
+    mask.position.copy(sourceMesh.position);
+    mask.rotation.copy(sourceMesh.rotation);
+    mask.scale.copy(sourceMesh.scale);
+    mask.renderOrder = 8;
+    mask.castShadow = false;
+    mask.receiveShadow = false;
+    parent.add(mask);
+
+    const xrayShell = new THREE.Mesh(sourceMesh.geometry, xrayOutlineMat);
+    xrayShell.position.copy(sourceMesh.position);
+    xrayShell.rotation.copy(sourceMesh.rotation);
+    xrayShell.scale.set(
+      sourceMesh.scale.x * 1.045,
+      sourceMesh.scale.y * 1.028,
+      sourceMesh.scale.z * 1.045
+    );
+    xrayShell.renderOrder = 9;
+    xrayShell.castShadow = false;
+    xrayShell.receiveShadow = false;
+    parent.add(xrayShell);
   };
 
+  const clothPbr = createArmorPBRTextures(skin.clothingColor, skin.trimColor, 'cloth');
+  const armorPbr = createArmorPBRTextures(skin.armorColor, skin.trimColor, 'armor');
+
   const clothMat = new THREE.MeshStandardMaterial({
-    color: skin.clothingColor,
+    color: 0xffffff,
+    map: clothPbr.map,
+    bumpMap: clothPbr.bumpMap,
+    bumpScale: 0.012,
+    roughnessMap: clothPbr.roughnessMap,
     roughness: 0.84,
-    metalness: 0.06,
+    metalness: 0.08,
   });
-  const armorMat = new THREE.MeshStandardMaterial({
-    color: skin.armorColor,
-    metalness: 0.55,
-    roughness: 0.36,
+  const armorMat = new THREE.MeshPhysicalMaterial({
+    color: 0xffffff,
+    map: armorPbr.map,
+    bumpMap: armorPbr.bumpMap,
+    bumpScale: 0.015,
+    roughnessMap: armorPbr.roughnessMap,
+    metalness: 0.62,
+    roughness: 0.34,
+    clearcoat: 0.58,
+    clearcoatRoughness: 0.16,
   });
-  const trimMat = new THREE.MeshStandardMaterial({
+  const trimMat = new THREE.MeshPhysicalMaterial({
     color: skin.trimColor,
-    metalness: 0.82,
-    roughness: 0.22,
+    metalness: 0.86,
+    roughness: 0.2,
+    clearcoat: 0.72,
+    clearcoatRoughness: 0.14,
   });
-  const visorMat = new THREE.MeshStandardMaterial({
+  const visorMat = new THREE.MeshPhysicalMaterial({
     color: skin.visorColor,
     emissive: skin.visorColor,
-    emissiveIntensity: 2.0,
-    roughness: 0.12,
+    emissiveIntensity: 1.85,
+    roughness: 0.08,
     metalness: 0.25,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.04,
   });
   const teamGlowMat = new THREE.MeshStandardMaterial({
     color: teamColorHex,
     emissive: teamColorHex,
-    emissiveIntensity: 1.9,
+    emissiveIntensity: 1.35,
     roughness: 0.2,
   });
 
@@ -1153,3 +1265,343 @@ export function buildHealOrbModel(): {
 
   return { group, core, ring };
 }
+
+function applyWorldBoxUVs(
+  geo: THREE.BoxGeometry,
+  w: number,
+  h: number,
+  d: number,
+  tileMeters = 4
+) {
+  const uv = geo.attributes.uv;
+  const norm = geo.attributes.normal;
+  if (!uv || !norm) return;
+  for (let i = 0; i < uv.count; i++) {
+    const nx = Math.abs(norm.getX(i));
+    const ny = Math.abs(norm.getY(i));
+    const u = uv.getX(i);
+    const v = uv.getY(i);
+    if (nx > 0.5) {
+      uv.setXY(i, (u * d) / tileMeters, (v * h) / tileMeters);
+    } else if (ny > 0.5) {
+      uv.setXY(i, (u * w) / tileMeters, (v * d) / tileMeters);
+    } else {
+      uv.setXY(i, (u * w) / tileMeters, (v * h) / tileMeters);
+    }
+  }
+  uv.needsUpdate = true;
+}
+
+export function buildWoodenCrate(
+  obs: MapObstacle,
+  woodTex: THREE.Texture,
+  woodBump: THREE.Texture
+): THREE.Group {
+  const group = new THREE.Group();
+  group.position.set(obs.x, obs.y, obs.z);
+
+  const plankMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: woodTex,
+    bumpMap: woodBump,
+    bumpScale: 0.045,
+    roughness: 0.88,
+    metalness: 0.03,
+  });
+  const frameWoodMat = new THREE.MeshStandardMaterial({
+    color: 0x5c3a1c,
+    map: woodTex,
+    bumpMap: woodBump,
+    bumpScale: 0.03,
+    roughness: 0.92,
+    metalness: 0.02,
+  });
+  const ironMat = new THREE.MeshStandardMaterial({
+    color: 0x2e3136,
+    roughness: 0.55,
+    metalness: 0.55,
+  });
+
+  // Main wooden crate body (single clean tiled crate panel per face for smaller crates, scaled cleanly for large ones)
+  const tileM = Math.max(1.2, Math.min(obs.w, obs.d, obs.h));
+  const bodyH = Math.max(0.2, obs.h - 0.04);
+  const bodyGeo = new THREE.BoxGeometry(obs.w, bodyH, obs.d);
+  if (obs.w > 2.4 || obs.d > 2.4) {
+    applyWorldBoxUVs(bodyGeo, obs.w, bodyH, obs.d, 1.9);
+  }
+  const body = new THREE.Mesh(bodyGeo, plankMat);
+  body.position.y = bodyH * 0.5;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  // Proud corner wooden posts (protruding slightly beyond crate body so zero z-fighting occurs)
+  const postW = Math.min(0.16, Math.max(0.08, tileM * 0.1));
+  for (const [cx, cz] of [
+    [-obs.w * 0.5, -obs.d * 0.5],
+    [obs.w * 0.5, -obs.d * 0.5],
+    [-obs.w * 0.5, obs.d * 0.5],
+    [obs.w * 0.5, obs.d * 0.5],
+  ]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(postW, obs.h, postW), frameWoodMat);
+    post.position.set(cx, obs.h * 0.5, cz);
+    post.castShadow = true;
+    group.add(post);
+  }
+
+  // Timber lid frame stacked cleanly above bodyH
+  const lid = new THREE.Mesh(
+    new THREE.BoxGeometry(obs.w + 0.04, 0.04, obs.d + 0.04),
+    frameWoodMat
+  );
+  lid.position.y = bodyH + 0.02;
+  lid.castShadow = true;
+  lid.receiveShadow = true;
+  group.add(lid);
+
+  // Rusted iron corner brackets around top rim
+  const strapH = Math.min(0.1, obs.h * 0.14);
+  for (const [cx, cz] of [
+    [-obs.w * 0.5, -obs.d * 0.5],
+    [obs.w * 0.5, -obs.d * 0.5],
+    [-obs.w * 0.5, obs.d * 0.5],
+    [obs.w * 0.5, obs.d * 0.5],
+  ]) {
+    const bracket = new THREE.Mesh(
+      new THREE.BoxGeometry(postW + 0.03, strapH, postW + 0.03),
+      ironMat
+    );
+    bracket.position.set(cx, obs.h - strapH * 0.5, cz);
+    group.add(bracket);
+  }
+
+  return group;
+}
+
+export function buildConcreteWall(
+  obs: MapObstacle,
+  concreteTex: THREE.Texture,
+  concreteBump: THREE.Texture
+): THREE.Group {
+  const group = new THREE.Group();
+  group.position.set(obs.x, obs.y, obs.z);
+
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: concreteTex,
+    bumpMap: concreteBump,
+    bumpScale: 0.055,
+    roughness: 0.88,
+    metalness: 0.06,
+  });
+  const copingMat = new THREE.MeshStandardMaterial({
+    color: 0x646a73,
+    roughness: 0.82,
+    metalness: 0.08,
+  });
+  const footingMat = new THREE.MeshStandardMaterial({
+    color: 0x565b63,
+    roughness: 0.92,
+    metalness: 0.04,
+  });
+
+  const isFloatingHeader = obs.y > 0.2;
+  const capH = isFloatingHeader ? 0 : Math.min(0.11, obs.h * 0.12);
+  const footH = isFloatingHeader ? 0 : Math.min(0.14, obs.h * 0.12);
+  const mainH = Math.max(0.2, obs.h - capH - footH);
+
+  if (footH > 0) {
+    const footing = new THREE.Mesh(
+      new THREE.BoxGeometry(obs.w + 0.1, footH, obs.d + 0.1),
+      footingMat
+    );
+    footing.position.y = footH * 0.5;
+    footing.castShadow = true;
+    footing.receiveShadow = true;
+    group.add(footing);
+  }
+
+  const bodyGeo = new THREE.BoxGeometry(obs.w, mainH, obs.d);
+  applyWorldBoxUVs(bodyGeo, obs.w, mainH, obs.d, 4.2);
+  const body = new THREE.Mesh(bodyGeo, wallMat);
+  body.position.y = footH + mainH * 0.5;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  if (capH > 0) {
+    const cap = new THREE.Mesh(
+      new THREE.BoxGeometry(obs.w + 0.08, capH, obs.d + 0.08),
+      copingMat
+    );
+    cap.position.y = footH + mainH + capH * 0.5;
+    cap.castShadow = true;
+    cap.receiveShadow = true;
+    group.add(cap);
+  }
+
+  return group;
+}
+
+export function buildBuildingWall(
+  obs: MapObstacle,
+  concreteTex: THREE.Texture,
+  concreteBump: THREE.Texture
+): THREE.Group {
+  const group = new THREE.Group();
+  group.position.set(obs.x, obs.y, obs.z);
+
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: concreteTex,
+    bumpMap: concreteBump,
+    bumpScale: 0.055,
+    roughness: 0.88,
+    metalness: 0.06,
+  });
+  const sillMat = new THREE.MeshStandardMaterial({
+    color: 0x5c6169,
+    roughness: 0.86,
+    metalness: 0.08,
+  });
+
+  const geo = new THREE.BoxGeometry(obs.w, obs.h, obs.d);
+  applyWorldBoxUVs(geo, obs.w, obs.h, obs.d, 4.5);
+  const wall = new THREE.Mesh(geo, wallMat);
+  wall.position.y = obs.h * 0.5;
+  wall.castShadow = true;
+  wall.receiveShadow = true;
+  group.add(wall);
+
+  // Subtle concrete window sill / base plinth for ground-level segments
+  if (obs.y < 0.1 && obs.h <= 1.25) {
+    const sill = new THREE.Mesh(
+      new THREE.BoxGeometry(obs.w + 0.14, 0.08, obs.d + 0.06),
+      sillMat
+    );
+    sill.position.y = obs.h - 0.04;
+    sill.castShadow = true;
+    sill.receiveShadow = true;
+    group.add(sill);
+  }
+
+  return group;
+}
+
+export function buildBuildingRoof(
+  obs: MapObstacle,
+  concreteTex: THREE.Texture,
+  concreteBump: THREE.Texture
+): THREE.Group {
+  const group = new THREE.Group();
+  group.position.set(obs.x, obs.y, obs.z);
+
+  const roofMat = new THREE.MeshStandardMaterial({
+    color: 0x9ca3af,
+    map: concreteTex,
+    bumpMap: concreteBump,
+    bumpScale: 0.04,
+    roughness: 0.9,
+    metalness: 0.08,
+  });
+  const beamMat = new THREE.MeshStandardMaterial({
+    color: 0x3f444d,
+    roughness: 0.65,
+    metalness: 0.45,
+  });
+
+  const slabGeo = new THREE.BoxGeometry(obs.w, obs.h, obs.d);
+  applyWorldBoxUVs(slabGeo, obs.w, obs.h, obs.d, 6.0);
+  const slab = new THREE.Mesh(slabGeo, roofMat);
+  slab.position.y = obs.h * 0.5;
+  slab.castShadow = true;
+  slab.receiveShadow = true;
+  group.add(slab);
+
+  // Exposed structural ceiling beams underneath roof for interior visual depth
+  const beamCount = Math.max(3, Math.floor(obs.d / 12));
+  const stepZ = obs.d / (beamCount + 1);
+  for (let i = 1; i <= beamCount; i++) {
+    const zPos = -obs.d * 0.5 + i * stepZ;
+    const beam = new THREE.Mesh(
+      new THREE.BoxGeometry(obs.w - 1.2, 0.28, 0.45),
+      beamMat
+    );
+    beam.position.set(0, -0.14, zPos);
+    beam.castShadow = true;
+    group.add(beam);
+  }
+
+  return group;
+}
+
+export function buildSquarePlatform(
+  obs: MapObstacle,
+  concreteTex: THREE.Texture,
+  concreteBump: THREE.Texture
+): THREE.Group {
+  const group = new THREE.Group();
+  group.position.set(obs.x, obs.y, obs.z);
+
+  const concreteMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: concreteTex,
+    bumpMap: concreteBump,
+    bumpScale: 0.05,
+    roughness: 0.86,
+    metalness: 0.06,
+  });
+  const rimMat = new THREE.MeshStandardMaterial({
+    color: 0x525861,
+    roughness: 0.82,
+    metalness: 0.1,
+  });
+
+  const plinthH = 0.24;
+  const topSlabH = 0.16;
+  const coreH = Math.max(0.2, obs.h - plinthH - topSlabH);
+
+  const plinthGeo = new THREE.BoxGeometry(obs.w + 0.5, plinthH, obs.d + 0.5);
+  applyWorldBoxUVs(plinthGeo, obs.w + 0.5, plinthH, obs.d + 0.5, 4);
+  const plinth = new THREE.Mesh(plinthGeo, rimMat);
+  plinth.position.y = plinthH * 0.5;
+  plinth.castShadow = true;
+  plinth.receiveShadow = true;
+  group.add(plinth);
+
+  const coreGeo = new THREE.BoxGeometry(obs.w - 0.16, coreH, obs.d - 0.16);
+  applyWorldBoxUVs(coreGeo, obs.w - 0.16, coreH, obs.d - 0.16, 4);
+  const core = new THREE.Mesh(coreGeo, concreteMat);
+  core.position.y = plinthH + coreH * 0.5;
+  core.castShadow = true;
+  core.receiveShadow = true;
+  group.add(core);
+
+  const deckGeo = new THREE.BoxGeometry(obs.w, topSlabH, obs.d);
+  applyWorldBoxUVs(deckGeo, obs.w, topSlabH, obs.d, 4);
+  const deck = new THREE.Mesh(deckGeo, rimMat);
+  deck.position.y = plinthH + coreH + topSlabH * 0.5;
+  deck.castShadow = true;
+  deck.receiveShadow = true;
+  group.add(deck);
+
+  // Corner concrete bollards at the 4 corners of the central square platform
+  for (const [bx, bz] of [
+    [-obs.w * 0.5 + 0.45, -obs.d * 0.5 + 0.45],
+    [obs.w * 0.5 - 0.45, -obs.d * 0.5 + 0.45],
+    [-obs.w * 0.5 + 0.45, obs.d * 0.5 - 0.45],
+    [obs.w * 0.5 - 0.45, obs.d * 0.5 - 0.45],
+  ]) {
+    const bollard = new THREE.Mesh(
+      new THREE.BoxGeometry(0.45, 0.48, 0.45),
+      concreteMat
+    );
+    bollard.position.set(bx, obs.h + 0.24, bz);
+    bollard.castShadow = true;
+    bollard.receiveShadow = true;
+    group.add(bollard);
+  }
+
+  return group;
+}
+

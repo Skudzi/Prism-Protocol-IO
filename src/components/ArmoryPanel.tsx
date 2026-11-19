@@ -86,25 +86,29 @@ export const ArmoryPanel: React.FC<ArmoryPanelProps> = ({
               skin.pattern === 'rainbow'
                 ? 'linear-gradient(135deg, #ef4444 0%, #f59e0b 20%, #10b981 42%, #06b6d4 65%, #6366f1 82%, #ec4899 100%)'
                 : skin.pattern === 'gold_walnut'
-                ? `linear-gradient(135deg, ${skin.primaryColor} 0%, ${skin.secondaryColor} 48%, ${skin.gripColor} 52%, ${skin.scopeColor} 100%)`
+                ? skin.id === 'royal_walnut'
+                  ? `linear-gradient(135deg, #fef08a 0%, ${skin.primaryColor} 44%, ${skin.gripColor} 58%, #3b1e08 100%)`
+                  : `linear-gradient(135deg, ${skin.primaryColor} 0%, ${skin.secondaryColor} 55%, ${skin.emissiveColor} 100%)`
                 : skin.pattern === 'hex_carbon'
                 ? `repeating-linear-gradient(45deg, ${skin.primaryColor}, ${skin.primaryColor} 6px, ${skin.secondaryColor} 6px, ${skin.secondaryColor} 10px)`
                 : skin.pattern === 'prism_holo'
-                ? `linear-gradient(135deg, #e2e8f0 0%, ${skin.emissiveColor} 50%, ${skin.secondaryColor} 100%)`
+                ? `linear-gradient(135deg, #f8fafc 0%, ${skin.emissiveColor} 50%, ${skin.secondaryColor} 100%)`
                 : `linear-gradient(135deg, ${skin.primaryColor} 45%, ${skin.emissiveColor} 100%)`;
 
             const patternLabel =
               skin.pattern === 'rainbow'
-                ? 'Rainbow Pattern'
+                ? 'Pearlescent Chameleon · Metallic Flake'
                 : skin.pattern === 'gold_walnut'
-                ? 'Gold · Wood Handle & Scope'
+                ? skin.id === 'royal_walnut'
+                  ? '24K Engraved Gold · Checkered Walnut'
+                  : 'Obsidian Titanium · Gold Scrollwork'
                 : skin.pattern === 'hex_carbon'
-                ? 'Carbon Hex Pattern'
+                ? '2x2 Twill Carbon Fiber'
                 : skin.pattern === 'circuit'
-                ? 'Circuit Pattern'
+                ? 'Anodized PCB Micro-Circuit'
                 : skin.pattern === 'prism_holo'
-                ? 'Holographic Prism'
-                : 'Tactical Finish';
+                ? 'Holographic Prism Foil'
+                : 'Cerakote Precision Matte';
 
             return (
               <div

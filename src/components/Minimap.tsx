@@ -40,7 +40,7 @@ export const Minimap: React.FC<MinimapProps> = ({ data, lang }) => {
         className="block rounded border border-white/10 bg-[#0d1522]"
         aria-label="Tactical Minimap"
       >
-        {/* Optional cross-roads */}
+        {/* Optional cross-roads or trampled dirt footpaths */}
         {map.hasRoads && (
           <g opacity={0.35}>
             <rect
@@ -56,6 +56,26 @@ export const Minimap: React.FC<MinimapProps> = ({ data, lang }) => {
               width={inner}
               height={toLen(6.8)}
               fill="#475569"
+            />
+          </g>
+        )}
+        {map.floorStyle === 'trampled_earth' && (
+          <g opacity={0.45}>
+            <rect
+              x={toSvg(-4)}
+              y={toSvg(-half + 6)}
+              width={toLen(8)}
+              height={toLen(half * 2 - 12)}
+              fill="#7c5c3e"
+              rx={2}
+            />
+            <rect
+              x={toSvg(-half + 14)}
+              y={toSvg(-3.5)}
+              width={toLen(half * 2 - 28)}
+              height={toLen(7)}
+              fill="#7c5c3e"
+              rx={2}
             />
           </g>
         )}
@@ -79,13 +99,29 @@ export const Minimap: React.FC<MinimapProps> = ({ data, lang }) => {
           const rw = Math.max(1.5, toLen(obs.w));
           const rd = Math.max(1.5, toLen(obs.d));
           const fill =
-            obs.kind === 'house'
+            obs.kind === 'wood_crate'
+              ? '#9a673a'
+              : obs.kind === 'concrete_wall'
+              ? '#94a3b8'
+              : obs.kind === 'building_wall'
+              ? '#64748b'
+              : obs.kind === 'building_roof'
+              ? '#475569'
+              : obs.kind === 'platform'
+              ? '#78716c'
+              : obs.kind === 'house'
               ? '#475569'
               : obs.kind === 'bridge'
               ? '#334155'
               : obs.kind === 'peek_wall'
               ? '#64748b'
               : '#3b4a5e';
+          const fillOpacity =
+            obs.kind === 'building_roof'
+              ? 0.25
+              : obs.kind === 'bridge'
+              ? 0.65
+              : 0.9;
           return (
             <rect
               key={`${obs.kind}-${idx}`}
@@ -95,9 +131,9 @@ export const Minimap: React.FC<MinimapProps> = ({ data, lang }) => {
               height={rd}
               rx={0.8}
               fill={fill}
-              fillOpacity={obs.kind === 'bridge' ? 0.65 : 0.9}
+              fillOpacity={fillOpacity}
               stroke="#94a3b8"
-              strokeOpacity={0.22}
+              strokeOpacity={obs.kind === 'building_roof' ? 0.35 : 0.22}
               strokeWidth={0.5}
             />
           );
@@ -153,7 +189,7 @@ export const Minimap: React.FC<MinimapProps> = ({ data, lang }) => {
               cx={toSvg(bot.x)}
               cy={toSvg(bot.z)}
               r={2.7}
-              fill={bot.team === 'cyan' ? '#22d3ee' : '#f59e0b'}
+              fill={bot.team === 'cyan' ? '#3b82f6' : '#ef4444'}
               stroke="#0f172a"
               strokeWidth={0.8}
             />

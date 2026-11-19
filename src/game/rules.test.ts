@@ -2,9 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDefaultProfile, DEFAULT_SETTINGS, MAPS, WEAPONS, WEAPON_SKINS } from './catalog';
 import {
+  applyControllerDeadzone,
   applyMatchRewards,
+  applyTutorialCompletion,
   applyUnderfootJumpVelocity,
   calculateDamage,
+  calculateMatchRewards,
   canManualReload,
   canTriggerEasterEgg,
   canTriggerUnderfootJump,
@@ -13,13 +16,20 @@ import {
   checkJumpPadCollision,
   claimBattlePassTier,
   getHealOrbScheduleTimes,
+  getKillRankReward,
+  MAX_MATCH_CREDITS,
+  MAX_MATCH_XP,
+  mergeLocalAndCloudProfiles,
   NORMAL_JUMP_VELOCITY,
   pickOpenHealOrbPosition,
   pickRandomMapId,
   purchaseStoreItem,
   resolvePlayerMovement,
+  sampleKillCamClip,
   shouldAutoReload,
   sortLeaderboardEntries,
+  TUTORIAL_REWARD_CREDITS,
+  TUTORIAL_REWARD_XP,
   UNDERFOOT_JUMP_VELOCITY,
   upgradeBattlePassPremium,
 } from './rules';
@@ -37,11 +47,13 @@ test('Easter egg on obsidian_vault unlocks ONLY with helios_rail', () => {
   assert.equal(canTriggerEasterEgg('hyperion_atrium', 'helios_rail'), false);
 });
 
-test('All 8 maps (including 3 daylight maps) have open spawn points clear of obstacles', () => {
+test('All 8 maps (4 daylight and 4 non-daylight) have open spawn points clear of obstacles', () => {
   const mapIds = Object.keys(MAPS) as Array<keyof typeof MAPS>;
   assert.equal(mapIds.length, 8);
-  const daylightMaps = mapIds.filter((id) => MAPS[id].isDaylight);
-  assert.ok(daylightMaps.length >= 3, 'At least 3 daylight maps should exist');
+  const daylightMaps = mapIds.filter((id) => MAPS[id].isDaylight === true);
+  const nonDaylightMaps = mapIds.filter((id) => !MAPS[id].isDaylight);
+  assert.equal(daylightMaps.length, 4, 'Exactly 4 daylight maps should exist');
+  assert.equal(nonDaylightMaps.length, 4, 'Exactly 4 non-daylight maps should exist');
   for (const id of mapIds) {
     const map = MAPS[id];
     assert.ok(map.spawns.length >= 4);
@@ -50,6 +62,15 @@ test('All 8 maps (including 3 daylight maps) have open spawn points clear of obs
         const insideX = Math.abs(spawn.x - obs.x) < obs.w * 0.5 + 0.5;
         const insideZ = Math.abs(spawn.z - obs.z) < obs.d * 0.5 + 0.5;
         assert.equal(insideX && insideZ, false, `Spawn overlaps obstacle in ${id}`);
+      }
+    }
+    if (map.teamSpawns) {
+      for (const spawn of [...map.teamSpawns.cyan, ...map.teamSpawns.amber]) {
+        for (const obs of map.obstacles) {
+          const insideX = Math.abs(spawn.x - obs.x) < obs.w * 0.5 + 0.5;
+          const insideZ = Math.abs(spawn.z - obs.z) < obs.d * 0.5 + 0.5;
+          assert.equal(insideX && insideZ, false, `Team spawn overlaps obstacle in ${id}`);
+        }
       }
     }
   }
@@ -188,8 +209,15 @@ test('Catalog includes Rainbow Spectrum, Golden Walnut skins, jump pads on all 8
 
 test('Store purchase, battle pass upgrade & tier claim update profile idempotently', () => {
   let profile = createDefaultProfile('TestUser');
-  assert.equal(profile.credits, 650);
+  assert.equal(profile.credits, 100);
+  assert.equal(profile.xp, 0);
+  assert.equal(profile.battlePassXp, 0);
 
+  // Insufficient starter funds for 300 CR skin
+  const failStarterBuy = purchaseStoreItem(profile, 'weapon_skin', 'solar_flare');
+  assert.equal(failStarterBuy.ok, false);
+
+  profile = { ...profile, credits: 650 };
   const buyRes = purchaseStoreItem(profile, 'weapon_skin', 'solar_flare');
   assert.equal(buyRes.ok, true);
   assert.equal(buyRes.profile.credits, 350);
@@ -218,7 +246,78 @@ test('Store purchase, battle pass upgrade & tier claim update profile idempotent
   assert.equal(dupClaim.ok, false);
 });
 
-test('Match rewards grant Prism Relic skin when Easter Egg found', () => {
+test('Match rewards follow kill rank brackets and deduct -5 XP and -10 CR per death', () => {
+  assert.deepEqual(
+    { xp: getKillRankReward(0).xp, cr: getKillRankReward(0).credits },
+    { xp: 0, cr: 0 }
+  );
+  assert.deepEqual(calculateMatchRewards({ tags: 0, deaths: 0 }), {
+    xpEarned: 0,
+    creditsEarned: 0,
+    rankId: 'rank_0',
+  });
+  assert.deepEqual(calculateMatchRewards({ tags: 1, deaths: 0 }), {
+    xpEarned: 5,
+    creditsEarned: 25,
+    rankId: 'rank_1',
+  });
+  assert.deepEqual(calculateMatchRewards({ tags: 3, deaths: 0 }), {
+    xpEarned: 5,
+    creditsEarned: 25,
+    rankId: 'rank_1',
+  });
+  assert.deepEqual(calculateMatchRewards({ tags: 4, deaths: 0 }), {
+    xpEarned: 20,
+    creditsEarned: 75,
+    rankId: 'rank_2',
+  });
+  assert.deepEqual(calculateMatchRewards({ tags: 7, deaths: 0 }), {
+    xpEarned: 20,
+    creditsEarned: 75,
+    rankId: 'rank_2',
+  });
+  assert.deepEqual(calculateMatchRewards({ tags: 8, deaths: 0 }), {
+    xpEarned: 30,
+    creditsEarned: 125,
+    rankId: 'rank_3',
+  });
+  assert.deepEqual(calculateMatchRewards({ tags: 10, deaths: 0 }), {
+    xpEarned: 30,
+    creditsEarned: 125,
+    rankId: 'rank_3',
+  });
+  assert.deepEqual(calculateMatchRewards({ tags: 11, deaths: 0 }), {
+    xpEarned: 40,
+    creditsEarned: 200,
+    rankId: 'rank_4',
+  });
+  assert.deepEqual(calculateMatchRewards({ tags: 15, deaths: 0 }), {
+    xpEarned: 40,
+    creditsEarned: 200,
+    rankId: 'rank_4',
+  });
+
+  const capped = calculateMatchRewards({ won: true, tags: 16, deaths: 0 });
+  assert.equal(capped.creditsEarned, MAX_MATCH_CREDITS);
+  assert.equal(capped.xpEarned, MAX_MATCH_XP);
+
+  // Death penalties (-5 XP and -10 CR per death) and zero clamp
+  assert.deepEqual(calculateMatchRewards({ tags: 6, deaths: 2 }), {
+    xpEarned: 10,
+    creditsEarned: 55,
+    rankId: 'rank_2',
+  });
+  assert.deepEqual(calculateMatchRewards({ tags: 1, deaths: 3 }), {
+    xpEarned: 0,
+    creditsEarned: 0,
+    rankId: 'rank_1',
+  });
+  assert.deepEqual(calculateMatchRewards({ tags: 18, deaths: 1 }), {
+    xpEarned: 45,
+    creditsEarned: 240,
+    rankId: 'rank_5',
+  });
+
   const base = createDefaultProfile('RelicHunter');
   const next = applyMatchRewards(
     base,
@@ -231,8 +330,8 @@ test('Match rewards grant Prism Relic skin when Easter Egg found', () => {
       teamScoreCyan: 14,
       teamScoreAmber: 9,
       accuracy: 64,
-      creditsEarned: 720,
-      xpEarned: 350,
+      creditsEarned: 250,
+      xpEarned: 50,
       easterEggFound: true,
       durationSec: 90,
     },
@@ -241,7 +340,9 @@ test('Match rewards grant Prism Relic skin when Easter Egg found', () => {
   );
   assert.equal(next.easterEggUnlocked, true);
   assert.ok(next.unlockedWeaponSkins.includes('prism_relic'));
-  assert.equal(next.credits, 650 + 720);
+  assert.equal(next.credits, 100 + 250);
+  assert.equal(next.xp, 50);
+  assert.equal(next.battlePassXp, 50);
 });
 
 test('Heal orbs schedule 5 times per game, pick clear positions, and trigger pickup on walk-through', () => {
@@ -373,3 +474,109 @@ test('Underfoot shot triggers +0.3x jump height boost and floor ray hit', () => 
   assert.ok(Math.abs(heightRatio - 1.3) < 1e-5, 'Underfoot jump reaches 1.3x normal jump height');
 });
 
+test('Tutorial completion awards +150 CR and +25 XP exactly once', () => {
+  const base = createDefaultProfile('Rookie');
+  const done = applyTutorialCompletion(base);
+  assert.equal(done.tutorialCompleted, true);
+  assert.equal(done.credits, 100 + TUTORIAL_REWARD_CREDITS);
+  assert.equal(done.xp, TUTORIAL_REWARD_XP);
+  assert.equal(done.battlePassXp, TUTORIAL_REWARD_XP);
+
+  const second = applyTutorialCompletion(done);
+  assert.equal(second.credits, done.credits);
+  assert.equal(second.xp, done.xp);
+});
+
+test('Controller radial deadzone filters stick drift and rescales full deflection cleanly', () => {
+  const drift = applyControllerDeadzone(0.08, -0.09, 0.15);
+  assert.equal(drift.x, 0);
+  assert.equal(drift.y, 0);
+
+  const active = applyControllerDeadzone(1, 0, 0.2);
+  assert.ok(Math.abs(active.x - 1) < 1e-5);
+  assert.equal(active.y, 0);
+});
+
+test('mergeLocalAndCloudProfiles preserves newer offline progress and skin unlocks', () => {
+  const cloud = {
+    ...createDefaultProfile('Skudzi'),
+    accountId: 'acc-1234',
+    credits: 220,
+    xp: 45,
+    battlePassXp: 45,
+    unlockedWeaponSkins: ['cobalt_standard'],
+    lastSyncedAt: '2026-11-19T10:00:00.000Z',
+  };
+  const localNewer = {
+    ...cloud,
+    credits: 410,
+    xp: 95,
+    battlePassXp: 95,
+    unlockedWeaponSkins: ['cobalt_standard', 'solar_flare'],
+    tutorialCompleted: true,
+    lastSyncedAt: '2026-11-19T10:05:00.000Z',
+  };
+
+  const merged = mergeLocalAndCloudProfiles(localNewer, cloud);
+  assert.equal(merged.credits, 410);
+  assert.equal(merged.xp, 95);
+  assert.equal(merged.tutorialCompleted, true);
+  assert.ok(merged.unlockedWeaponSkins.includes('solar_flare'));
+});
+
+test('Map 1 allows entering side buildings through doorways under roofs and uses wooden crates & concrete walls', () => {
+  const map1 = MAPS.hyperion_atrium;
+  assert.equal(map1.isDaylight, true);
+  assert.equal(map1.floorStyle, 'trampled_earth');
+  assert.ok(map1.teamSpawns && map1.teamSpawns.cyan.length >= 4 && map1.teamSpawns.amber.length >= 4);
+  assert.ok(map1.obstacles.some((o) => o.kind === 'wood_crate'));
+  assert.ok(map1.obstacles.some((o) => o.kind === 'concrete_wall'));
+  assert.ok(map1.obstacles.some((o) => o.kind === 'platform' && o.x === 0 && o.z === 0));
+
+  // Walk into West building doorway at (x = -46.7, z = 12) from outside (x = -44, z = 12) moving -X
+  const enterWest = resolvePlayerMovement(
+    { x: -45.5, y: 0, z: 12 },
+    { x: 0, y: 0, z: 0 },
+    0,
+    -1,
+    0,
+    false,
+    true,
+    0.05,
+    map1,
+    10,
+    0.48
+  );
+  assert.ok(enterWest.pos.x < -45.5, 'Player should walk smoothly through West doorway into building');
+
+  // Walk freely inside West building underneath roof (y=4.5)
+  const insideWest = resolvePlayerMovement(
+    { x: -53, y: 0, z: 12 },
+    { x: 0, y: 0, z: 0 },
+    1,
+    0,
+    0,
+    false,
+    true,
+    0.05,
+    map1,
+    8.2,
+    0.48
+  );
+  assert.ok(insideWest.pos.z < 12, 'Player should move freely inside West building under its roof');
+});
+
+test('sampleKillCamClip interpolates attacker perspective smoothly over the 3-second replay', () => {
+  const clip = [
+    { t: 0, attackerX: 0, attackerY: 0, attackerZ: 10, attackerYaw: 0, victimX: 0, victimY: 0, victimZ: 0 },
+    { t: 1.5, attackerX: 3, attackerY: 0, attackerZ: 10, attackerYaw: 0.5, victimX: 2, victimY: 0, victimZ: 0 },
+    { t: 3.0, attackerX: 6, attackerY: 0, attackerZ: 10, attackerYaw: 1.0, victimX: 4, victimY: 0, victimZ: 0 },
+  ];
+  const mid = sampleKillCamClip(clip, 0.5);
+  assert.ok(mid);
+  assert.ok(Math.abs(mid.attackerX - 3) < 1e-5);
+  assert.ok(Math.abs(mid.attackerYaw - 0.5) < 1e-5);
+  const end = sampleKillCamClip(clip, 1);
+  assert.ok(end);
+  assert.ok(Math.abs(end.attackerX - 6) < 1e-5);
+});

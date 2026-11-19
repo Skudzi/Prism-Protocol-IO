@@ -92,6 +92,10 @@ export interface MapObstacle {
     | 'monolith'
     | 'rock'
     | 'crate'
+    | 'wood_crate'
+    | 'concrete_wall'
+    | 'building_wall'
+    | 'building_roof'
     | 'ice'
     | 'bridge'
     | 'house'
@@ -163,6 +167,7 @@ export interface MapDef {
   arenaHalfSize: number;
   isOutdoor: boolean;
   isDaylight?: boolean;
+  floorStyle?: 'default' | 'trampled_earth';
   hasRoads?: boolean;
   hasTrees?: boolean;
   hasStreetLights?: boolean;
@@ -180,6 +185,10 @@ export interface MapDef {
   obstacles: MapObstacle[];
   jumpPads: JumpPadDef[];
   spawns: MapSpawn[];
+  teamSpawns?: {
+    cyan: MapSpawn[];
+    amber: MapSpawn[];
+  };
   easterEgg?: MapEasterEgg;
 }
 
@@ -229,6 +238,11 @@ export interface GameSettings {
   particlesEnabled: boolean;
   audioEnabled: boolean;
   masterVolume: number;
+  controllerEnabled: boolean;
+  controllerSensitivity: number;
+  controllerDeadzone: number;
+  controllerInvertY: boolean;
+  controllerVibration: boolean;
   darkMode: boolean;
   language: LanguageCode;
   crossPlatformEnabled: boolean;

@@ -22,7 +22,9 @@ import { ArenaEngine, HudSnapshot } from './engine/ArenaEngine';
 import { createDefaultProfile, DEFAULT_SETTINGS, MAPS } from './game/catalog';
 import {
   applyMatchRewards,
+  applyTutorialCompletion,
   claimBattlePassTier,
+  mergeLocalAndCloudProfiles,
   pickRandomMapId,
   purchaseStoreItem,
   upgradeBattlePassPremium,
@@ -78,6 +80,12 @@ const INITIAL_HUD: HudSnapshot = {
   lastHitZone: null,
   damageFlashMs: 0,
   pointerLocked: false,
+  isDead: false,
+  isKillCam: false,
+  killCamRemainingMs: 0,
+  deathRespawnRemainingMs: 0,
+  killedBy: null,
+  hasGamepad: false,
   tutorialStep: 1,
   tutorialDronesHit: 0,
   easterEggUnlockedNow: false,
@@ -85,7 +93,7 @@ const INITIAL_HUD: HudSnapshot = {
   killsFeed: [],
   minimap: {
     mapId: 'hyperion_atrium',
-    arenaHalfSize: 35,
+    arenaHalfSize: 68,
     player: { x: 0, z: 27, yaw: 0 },
     bots: [],
     peers: [],
@@ -95,6 +103,7 @@ const INITIAL_HUD: HudSnapshot = {
 
 const STORAGE_PROFILE_KEY = 'prism_protocol_profile_v1';
 const STORAGE_TOKEN_KEY = 'prism_protocol_token_v1';
+const STORAGE_PENDING_SYNC_KEY = 'prism_protocol_pending_sync_v1';
 
 function normalizeProfile(raw: PlayerCloudProfile): PlayerCloudProfile {
   return {
@@ -106,7 +115,7 @@ function normalizeProfile(raw: PlayerCloudProfile): PlayerCloudProfile {
   };
 }
 
-function loadInitialProfile(): PlayerCloudProfile {
+function readLocalProfile(): PlayerCloudProfile | null {
   try {
     const raw = localStorage.getItem(STORAGE_PROFILE_KEY);
     if (raw) {
@@ -114,9 +123,13 @@ function loadInitialProfile(): PlayerCloudProfile {
       if (parsed && parsed.settings && parsed.keybinds) return normalizeProfile(parsed);
     }
   } catch {
-    // Fallback to default
+    // Ignore storage read errors
   }
-  return createDefaultProfile('Vanguard01');
+  return null;
+}
+
+function loadInitialProfile(): PlayerCloudProfile {
+  return readLocalProfile() ?? createDefaultProfile('Vanguard01');
 }
 
 export default function App() {
@@ -138,7 +151,9 @@ export default function App() {
   const authTokenRef = useRef<string | null>(authToken);
   authTokenRef.current = authToken;
   const [authReady, setAuthReady] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<string>('Local Save');
+  const [syncStatus, setSyncStatus] = useState<string>(() =>
+    t(profile.settings.language, authToken ? 'account.pendingSync' : 'account.localOnly')
+  );
   const lastPlayedMapRef = useRef<MapId | undefined>(undefined);
   const [screenState, setScreenState] = useState<GameScreenState>('title');
   const [selectedMap, setSelectedMap] = useState<MapId>('hyperion_atrium');
@@ -198,7 +213,86 @@ export default function App() {
     }
   }, []);
 
-  // Restore saved username/password session on boot
+  const syncCloudSave = useCallback(
+    async (nextProfile: PlayerCloudProfile, refreshFromReturn = false) => {
+      const stamped: PlayerCloudProfile = {
+        ...nextProfile,
+        lastSyncedAt: new Date().toISOString(),
+      };
+      try {
+        localStorage.setItem(STORAGE_PROFILE_KEY, JSON.stringify(stamped));
+      } catch {
+        // Ignore storage quota errors
+      }
+
+      const token = authTokenRef.current;
+      if (!token) {
+        try {
+          localStorage.setItem(STORAGE_PENDING_SYNC_KEY, '1');
+        } catch {
+          // Ignore storage errors
+        }
+        setSyncStatus(t(stamped.settings.language, 'account.localOnly'));
+        return;
+      }
+
+      try {
+        setSyncStatus('Syncing...');
+        const res = await fetch('/api/cloud-save', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ profile: stamped }),
+        });
+        if (res.status === 401) {
+          try {
+            localStorage.removeItem(STORAGE_TOKEN_KEY);
+            localStorage.setItem(STORAGE_PENDING_SYNC_KEY, '1');
+          } catch {
+            // Ignore storage errors
+          }
+          setAuthToken(null);
+          setSyncStatus(t(stamped.settings.language, 'account.localOnly'));
+          return;
+        }
+        if (!res.ok) {
+          try {
+            localStorage.setItem(STORAGE_PENDING_SYNC_KEY, '1');
+          } catch {
+            // Ignore storage errors
+          }
+          setSyncStatus(t(stamped.settings.language, 'account.pendingSync'));
+          return;
+        }
+        const data = await res.json();
+        if (data?.profile) {
+          const normalized = normalizeProfile(data.profile as PlayerCloudProfile);
+          try {
+            localStorage.removeItem(STORAGE_PENDING_SYNC_KEY);
+            localStorage.setItem(STORAGE_PROFILE_KEY, JSON.stringify(normalized));
+          } catch {
+            // Ignore storage errors
+          }
+          if (refreshFromReturn) {
+            setProfile(normalized);
+          }
+          setSyncStatus(t(normalized.settings.language, 'account.synced'));
+        }
+      } catch {
+        try {
+          localStorage.setItem(STORAGE_PENDING_SYNC_KEY, '1');
+        } catch {
+          // Ignore storage errors
+        }
+        setSyncStatus(t(stamped.settings.language, 'account.pendingSync'));
+      }
+    },
+    []
+  );
+
+  // Restore saved username/password session on boot and merge Local + Cloud progress
   useEffect(() => {
     let cancelled = false;
     const restoreSession = async () => {
@@ -206,7 +300,7 @@ export default function App() {
       if (!savedToken) {
         if (!cancelled) {
           setAuthReady(true);
-          setSyncStatus('Local Save');
+          setSyncStatus(t(profileRef.current.settings.language, 'account.localOnly'));
           void refreshSocial(null);
         }
         return;
@@ -219,9 +313,40 @@ export default function App() {
         if (res.ok) {
           const data = await res.json();
           if (!cancelled && data?.profile) {
-            const normalized = normalizeProfile(data.profile as PlayerCloudProfile);
-            setProfile(normalized);
-            setSyncStatus(t(normalized.settings.language, 'account.synced'));
+            const cloudProfile = normalizeProfile(data.profile as PlayerCloudProfile);
+            const localProfile = readLocalProfile();
+            const hasPendingLocal = (() => {
+              try {
+                return localStorage.getItem(STORAGE_PENDING_SYNC_KEY) === '1';
+              } catch {
+                return false;
+              }
+            })();
+
+            const merged = localProfile
+              ? normalizeProfile(mergeLocalAndCloudProfiles(localProfile, cloudProfile))
+              : cloudProfile;
+            setProfile(merged);
+
+            const needsCloudPush =
+              hasPendingLocal ||
+              merged.xp !== cloudProfile.xp ||
+              merged.credits !== cloudProfile.credits ||
+              merged.tutorialCompleted !== cloudProfile.tutorialCompleted ||
+              merged.stats.matchesPlayed !== cloudProfile.stats.matchesPlayed ||
+              merged.unlockedWeaponSkins.length !== cloudProfile.unlockedWeaponSkins.length ||
+              merged.unlockedAvatarSkins.length !== cloudProfile.unlockedAvatarSkins.length;
+
+            if (needsCloudPush) {
+              await syncCloudSave(merged);
+            } else {
+              try {
+                localStorage.removeItem(STORAGE_PENDING_SYNC_KEY);
+              } catch {
+                // Ignore
+              }
+              setSyncStatus(t(merged.settings.language, 'account.synced'));
+            }
             void refreshSocial(savedToken);
           }
         } else if (res.status === 401) {
@@ -232,13 +357,13 @@ export default function App() {
           }
           if (!cancelled) {
             setAuthToken(null);
-            setSyncStatus('Local Save');
+            setSyncStatus(t(profileRef.current.settings.language, 'account.localOnly'));
             void refreshSocial(null);
           }
         }
       } catch {
         if (!cancelled) {
-          setSyncStatus('Local Save');
+          setSyncStatus(t(profileRef.current.settings.language, 'account.pendingSync'));
         }
       } finally {
         if (!cancelled) {
@@ -251,53 +376,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [refreshSocial]);
-
-  const syncCloudSave = useCallback(
-    async (nextProfile: PlayerCloudProfile, refreshFromReturn = false) => {
-      const token = authTokenRef.current;
-      if (!token) {
-        setSyncStatus('Local Save');
-        return;
-      }
-      try {
-        setSyncStatus('Syncing...');
-        const res = await fetch('/api/cloud-save', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ profile: nextProfile }),
-        });
-        if (res.status === 401) {
-          try {
-            localStorage.removeItem(STORAGE_TOKEN_KEY);
-          } catch {
-            // Ignore storage errors
-          }
-          setAuthToken(null);
-          setSyncStatus('Local Save');
-          return;
-        }
-        if (!res.ok) {
-          setSyncStatus('Sync Error');
-          return;
-        }
-        const data = await res.json();
-        if (data?.profile) {
-          const normalized = normalizeProfile(data.profile as PlayerCloudProfile);
-          if (refreshFromReturn) {
-            setProfile(normalized);
-          }
-          setSyncStatus(t(normalized.settings.language, 'account.synced'));
-        }
-      } catch {
-        setSyncStatus('Sync Error');
-      }
-    },
-    []
-  );
+  }, [refreshSocial, syncCloudSave]);
 
   // WebSocket real-time multiplayer, presence, invites & chat
   useEffect(() => {
@@ -433,12 +512,8 @@ export default function App() {
     },
     onTutorialComplete: () => {
       setProfile((prev) => {
-        const updated = {
-          ...prev,
-          tutorialCompleted: true,
-          credits: prev.credits + (prev.tutorialCompleted ? 0 : 150),
-        };
-        syncCloudSave(updated);
+        const updated = applyTutorialCompletion(prev);
+        void syncCloudSave(updated);
         return updated;
       });
       setIsTutorial(false);
@@ -458,7 +533,7 @@ export default function App() {
           credits: prev.credits + (prev.easterEggUnlocked ? 0 : 500),
           unlockedWeaponSkins: nextSkins,
         };
-        syncCloudSave(updated);
+        void syncCloudSave(updated);
         return updated;
       });
     },
@@ -470,12 +545,22 @@ export default function App() {
     setScreenState('gameover');
     setProfile((prev) => {
       const updated = applyMatchRewards(prev, summary, shotsFired, shotsHit);
-      syncCloudSave(updated);
+      void syncCloudSave(updated);
       return updated;
     });
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'room:leave' }));
     }
+  };
+  callbacksRef.current.onTutorialComplete = () => {
+    setProfile((prev) => {
+      const updated = applyTutorialCompletion(prev);
+      void syncCloudSave(updated);
+      return updated;
+    });
+    setIsTutorial(false);
+    setScreenState('title');
+    engineRef.current?.setScreenState('title');
   };
 
   // Mount Three.js ArenaEngine ONCE
@@ -494,6 +579,10 @@ export default function App() {
         onPauseRequested: () => {
           setScreenState('paused');
           engineRef.current?.setScreenState('paused');
+        },
+        onResumeRequested: () => {
+          setScreenState('playing');
+          engineRef.current?.setScreenState('playing');
         },
         onChatRequested: () => {
           setMatchChatOpen((prev) => !prev);
@@ -655,7 +744,7 @@ export default function App() {
     }
   };
 
-  // Account Handlers (Username + Password Cloud Auth, No Email Required)
+  // Account Handlers (Username + Password Cloud Auth, Dual Local + Cloud Merge)
   const handleLogin = async (
     username: string,
     password: string,
@@ -672,10 +761,33 @@ export default function App() {
         return { ok: false, error: data?.error ?? 'Invalid username or password.' };
       }
       localStorage.setItem(STORAGE_TOKEN_KEY, data.token);
+      authTokenRef.current = data.token;
       setAuthToken(data.token);
-      const normalized = normalizeProfile(data.profile as PlayerCloudProfile);
-      setProfile(normalized);
-      setSyncStatus(t(normalized.settings.language, 'account.synced'));
+
+      const cloudProfile = normalizeProfile(data.profile as PlayerCloudProfile);
+      const localProfile = readLocalProfile();
+      const merged = localProfile
+        ? normalizeProfile(mergeLocalAndCloudProfiles(localProfile, cloudProfile))
+        : cloudProfile;
+      setProfile(merged);
+
+      if (
+        merged.xp !== cloudProfile.xp ||
+        merged.credits !== cloudProfile.credits ||
+        merged.tutorialCompleted !== cloudProfile.tutorialCompleted ||
+        merged.stats.matchesPlayed !== cloudProfile.stats.matchesPlayed ||
+        merged.unlockedWeaponSkins.length !== cloudProfile.unlockedWeaponSkins.length ||
+        merged.unlockedAvatarSkins.length !== cloudProfile.unlockedAvatarSkins.length
+      ) {
+        await syncCloudSave(merged);
+      } else {
+        try {
+          localStorage.removeItem(STORAGE_PENDING_SYNC_KEY);
+        } catch {
+          // Ignore
+        }
+        setSyncStatus(t(merged.settings.language, 'account.synced'));
+      }
       void refreshSocial(data.token);
       return { ok: true };
     } catch (err) {
@@ -707,7 +819,13 @@ export default function App() {
         return { ok: false, error: data?.error ?? 'Could not create account.' };
       }
       localStorage.setItem(STORAGE_TOKEN_KEY, data.token);
+      authTokenRef.current = data.token;
       setAuthToken(data.token);
+      try {
+        localStorage.removeItem(STORAGE_PENDING_SYNC_KEY);
+      } catch {
+        // Ignore
+      }
       const normalized = normalizeProfile(data.profile as PlayerCloudProfile);
       setProfile(normalized);
       setSyncStatus(t(normalized.settings.language, 'account.synced'));
@@ -736,12 +854,15 @@ export default function App() {
   const handleLogout = async () => {
     try {
       localStorage.removeItem(STORAGE_TOKEN_KEY);
+      localStorage.removeItem(STORAGE_PENDING_SYNC_KEY);
     } catch {
       // Ignore storage errors
     }
+    authTokenRef.current = null;
     setAuthToken(null);
-    setProfile(createDefaultProfile('Vanguard01'));
-    setSyncStatus('Local Save');
+    const guest = createDefaultProfile('Vanguard01');
+    setProfile(guest);
+    setSyncStatus(t(guest.settings.language, 'account.localOnly'));
     void refreshSocial(null);
   };
 
@@ -772,6 +893,33 @@ export default function App() {
       return {
         ok: false,
         error: err instanceof Error ? err.message : 'Could not add friend',
+      };
+    }
+  };
+
+  const handleRemoveFriend = async (nickname: string) => {
+    try {
+      const token = authTokenRef.current;
+      const res = await fetch('/api/social/friends/remove', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ nickname }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { ok: false, error: data?.error ?? 'Could not remove friend' };
+      }
+      if (Array.isArray(data.friends)) {
+        setFriends(data.friends);
+      }
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Could not remove friend',
       };
     }
   };
@@ -972,7 +1120,7 @@ export default function App() {
             </div>
           ) : (
             /* Active Hub Modal Drawer */
-            <div className="pointer-events-auto mx-auto my-auto flex max-h-[74vh] w-full max-w-5xl flex-col rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white/95 dark:bg-[#0D131F]/95 shadow-2xl">
+            <div className="pointer-events-auto mx-auto my-auto flex max-h-[70vh] w-full max-w-5xl flex-col rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white/95 dark:bg-[#0D131F]/95 shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-5 py-3.5">
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white">
                   {tabItems.find((x) => x.id === activeTab)?.label}
@@ -1060,6 +1208,7 @@ export default function App() {
                     chatMessages={chatMessages}
                     lang={lang}
                     onAddFriend={handleAddFriend}
+                    onRemoveFriend={handleRemoveFriend}
                     onInviteFriend={handleInviteFriend}
                     onJoinInvite={(inv) => {
                       setRoomCode(inv.roomCode);
@@ -1145,6 +1294,8 @@ export default function App() {
         audioEnabled={profile.settings.audioEnabled}
         showFps={profile.settings.showFps}
         lang={lang}
+        settings={profile.settings}
+        keybinds={profile.keybinds}
         easterEggBannerVisible={easterEggBanner}
         matchSummary={matchSummary}
         chatMessages={chatMessages}
@@ -1165,6 +1316,9 @@ export default function App() {
           setScreenState('playing');
           engineRef.current?.setScreenState('playing');
         }}
+        onRespawn={() => {
+          engineRef.current?.respawnPlayer();
+        }}
         onRestart={() => {
           if (screenState === 'gameover') {
             startNextRound();
@@ -1176,7 +1330,7 @@ export default function App() {
         onSkipTutorial={() => {
           setProfile((prev) => {
             const updated = { ...prev, tutorialCompleted: true };
-            syncCloudSave(updated);
+            void syncCloudSave(updated);
             return updated;
           });
           handleReturnHub();
@@ -1185,6 +1339,8 @@ export default function App() {
           engineRef.current?.setWeapon(id);
           setProfile((prev) => ({ ...prev, equippedWeaponId: id }));
         }}
+        onUpdateSettings={updateSettings}
+        onUpdateKeybinds={updateKeybinds}
       />
     </div>
   );

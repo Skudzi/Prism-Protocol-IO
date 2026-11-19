@@ -45,62 +45,14 @@ function hashPassword(password: string, salt: string): string {
   return crypto.scryptSync(password, salt, 64).toString('hex');
 }
 
-function createSeedStore(): CloudStoreData {
-  const seedUsers: Array<{
-    nickname: string;
-    platform: PlatformType;
-    credits: number;
-    avatarSkin: string;
-  }> = [
-    { nickname: 'NovaPrime', platform: 'PC', credits: 1250, avatarSkin: 'titanium_prime' },
-    { nickname: 'Kaito_JP', platform: 'Console', credits: 940, avatarSkin: 'crimson_striker' },
-    { nickname: 'Zuzana_SK', platform: 'Web', credits: 880, avatarSkin: 'aurora_violet' },
-    { nickname: 'ElenaV', platform: 'Mobile', credits: 710, avatarSkin: 'stealth_matte' },
-  ];
+const FAKE_SEED_NICKNAMES = new Set(['novaprime', 'kaito_jp', 'zuzana_sk', 'elenav']);
+const FAKE_SEED_CHAT_IDS = new Set(['seed-1', 'seed-2']);
 
-  const users: Record<string, StoredUser> = {};
-  for (const s of seedUsers) {
-    const salt = crypto.randomBytes(16).toString('hex');
-    const profile = createDefaultProfile(s.nickname);
-    profile.accountId = `acc-${s.nickname.toLowerCase()}`;
-    profile.platform = s.platform;
-    profile.credits = s.credits;
-    profile.equippedAvatarSkinId = s.avatarSkin;
-    profile.unlockedAvatarSkins = Array.from(new Set(['vanguard_cyan', s.avatarSkin]));
-    profile.tutorialCompleted = true;
-
-    users[s.nickname.toLowerCase()] = {
-      nickname: s.nickname,
-      nicknameLower: s.nickname.toLowerCase(),
-      passwordSalt: salt,
-      passwordHash: hashPassword('prism1234', salt),
-      profile,
-      friends: seedUsers
-        .map((other) => other.nickname)
-        .filter((n) => n !== s.nickname),
-    };
-  }
-
+function createEmptyStore(): CloudStoreData {
   return {
-    users,
-    chatHistory: [
-      {
-        id: 'seed-1',
-        channel: 'global',
-        sender: 'NovaPrime',
-        platform: 'PC',
-        text: 'Squad up in Veridian Park — the elevated sky-bridges give great angles!',
-        timestamp: new Date(Date.now() - 180000).toISOString(),
-      },
-      {
-        id: 'seed-2',
-        channel: 'global',
-        sender: 'Zuzana_SK',
-        platform: 'Web',
-        text: 'Cross-play lobby is live! Anyone up for Hyperion Atrium?',
-        timestamp: new Date(Date.now() - 60000).toISOString(),
-      },
-    ],
+    users: {},
+    chatHistory: [],
+    sessionSecret: crypto.randomBytes(32).toString('hex'),
   };
 }
 
@@ -110,27 +62,67 @@ function loadStore(): CloudStoreData {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
     if (!fs.existsSync(STORE_PATH)) {
-      const seed = createSeedStore();
-      fs.writeFileSync(STORE_PATH, JSON.stringify(seed, null, 2), 'utf8');
-      return seed;
+      const empty = createEmptyStore();
+      fs.writeFileSync(STORE_PATH, JSON.stringify(empty, null, 2), 'utf8');
+      return empty;
     }
     const raw = fs.readFileSync(STORE_PATH, 'utf8');
     const parsed = JSON.parse(raw) as CloudStoreData;
-    if (!parsed.users) return createSeedStore();
+    if (!parsed.users) return createEmptyStore();
+
+    let dirty = false;
+    for (const fakeKey of FAKE_SEED_NICKNAMES) {
+      if (parsed.users[fakeKey]) {
+        delete parsed.users[fakeKey];
+        dirty = true;
+      }
+    }
+
+    if (Array.isArray(parsed.chatHistory)) {
+      const filteredChat = parsed.chatHistory.filter(
+        (m) =>
+          !FAKE_SEED_CHAT_IDS.has(m.id) &&
+          !FAKE_SEED_NICKNAMES.has(String(m.sender ?? '').toLowerCase()) &&
+          String(m.sender ?? '').toLowerCase() !== 'striker99'
+      );
+      if (filteredChat.length !== parsed.chatHistory.length) {
+        parsed.chatHistory = filteredChat;
+        dirty = true;
+      }
+    } else {
+      parsed.chatHistory = [];
+      dirty = true;
+    }
+
     for (const u of Object.values(parsed.users)) {
       if (u?.profile) {
         u.profile.settings = { ...DEFAULT_SETTINGS, ...(u.profile.settings ?? {}) };
       }
+      if (Array.isArray(u.friends)) {
+        const cleanedFriends = u.friends.filter(
+          (nick) => !FAKE_SEED_NICKNAMES.has(nick.toLowerCase()) && Boolean(parsed.users[nick.toLowerCase()])
+        );
+        if (cleanedFriends.length !== u.friends.length) {
+          u.friends = cleanedFriends;
+          dirty = true;
+        }
+      } else {
+        u.friends = [];
+        dirty = true;
+      }
     }
+
     if (!parsed.sessionSecret) {
       parsed.sessionSecret = crypto.randomBytes(32).toString('hex');
+      dirty = true;
+    }
+
+    if (dirty) {
       fs.writeFileSync(STORE_PATH, JSON.stringify(parsed, null, 2), 'utf8');
     }
     return parsed;
   } catch {
-    const seed = createSeedStore();
-    seed.sessionSecret = crypto.randomBytes(32).toString('hex');
-    return seed;
+    return createEmptyStore();
   }
 }
 
@@ -212,13 +204,6 @@ interface ConnectedClient {
 const clients = new Map<string, ConnectedClient>();
 const pendingInvites = new Map<string, PartyInvite[]>();
 
-const SEED_STATUS_DEFAULTS: Record<string, { status: FriendStatus; mapId?: MapId }> = {
-  novaprime: { status: 'lobby' },
-  kaito_jp: { status: 'in_match', mapId: 'cryo_spire' },
-  zuzana_sk: { status: 'online' },
-  elenav: { status: 'offline' },
-};
-
 function getLiveStatusForNickname(nickname: string): {
   status: FriendStatus;
   currentMap?: MapId;
@@ -234,25 +219,24 @@ function getLiveStatusForNickname(nickname: string): {
       };
     }
   }
-  const seed = SEED_STATUS_DEFAULTS[lower];
-  if (seed) {
-    return { status: seed.status, currentMap: seed.mapId };
-  }
   return { status: 'offline' };
 }
 
 function buildFriendsList(friendNicknames: string[]): FriendEntry[] {
-  return friendNicknames.map((nick) => {
+  const result: FriendEntry[] = [];
+  for (const nick of friendNicknames) {
     const user = store.users[nick.toLowerCase()];
-    const live = getLiveStatusForNickname(nick);
-    return {
-      nickname: user?.nickname ?? nick,
-      platform: user?.profile.platform ?? 'Web',
+    if (!user) continue;
+    const live = getLiveStatusForNickname(user.nickname);
+    result.push({
+      nickname: user.nickname,
+      platform: user.profile.platform,
       status: live.status,
       currentMap: live.currentMap,
       roomCode: live.roomCode,
-    };
-  });
+    });
+  }
+  return result;
 }
 
 function broadcastAll(payload: unknown) {
@@ -367,7 +351,7 @@ async function startServer() {
       passwordSalt: salt,
       passwordHash: hashPassword(password, salt),
       profile,
-      friends: ['NovaPrime', 'Zuzana_SK'],
+      friends: [],
     };
     saveStore();
 
@@ -484,10 +468,10 @@ async function startServer() {
     res.json({ profile: user.profile });
   });
 
-  // Social: Friends + Invites + Chat History
+  // Social: Friends + Invites + Chat History (real registered accounts only)
   app.get('/api/social/state', (req, res) => {
     const user = getAuthUser(req);
-    const friendNicks = user ? user.friends : ['NovaPrime', 'Kaito_JP', 'Zuzana_SK', 'ElenaV'];
+    const friendNicks = user ? user.friends : [];
     const nickKey = user ? user.nicknameLower : 'guest';
     res.json({
       friends: buildFriendsList(friendNicks),
@@ -497,6 +481,12 @@ async function startServer() {
   });
 
   app.post('/api/social/friends/add', (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) {
+      res.status(401).json({ error: 'Sign in with a cloud account to add friends.' });
+      return;
+    }
+
     const targetNick = String(req.body?.nickname ?? '').trim();
     if (!targetNick) {
       res.status(400).json({ error: 'Nickname required' });
@@ -507,24 +497,34 @@ async function startServer() {
       res.status(404).json({ error: 'Player nickname not found in Prism cloud.' });
       return;
     }
-
-    const user = getAuthUser(req);
-    if (user) {
-      if (user.nicknameLower === targetUser.nicknameLower) {
-        res.status(400).json({ error: 'Cannot add yourself.' });
-        return;
-      }
-      if (!user.friends.some((f) => f.toLowerCase() === targetUser.nicknameLower)) {
-        user.friends.push(targetUser.nickname);
-        saveStore();
-      }
-      res.json({ friends: buildFriendsList(user.friends) });
+    if (user.nicknameLower === targetUser.nicknameLower) {
+      res.status(400).json({ error: 'Cannot add yourself.' });
       return;
     }
+    if (!user.friends.some((f) => f.toLowerCase() === targetUser.nicknameLower)) {
+      user.friends.push(targetUser.nickname);
+      saveStore();
+    }
+    res.json({ friends: buildFriendsList(user.friends) });
+  });
 
-    res.json({
-      friends: buildFriendsList(['NovaPrime', 'Kaito_JP', 'Zuzana_SK', 'ElenaV', targetUser.nickname]),
-    });
+  app.post('/api/social/friends/remove', (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) {
+      res.status(401).json({ error: 'Authentication required.' });
+      return;
+    }
+    const targetNick = String(req.body?.nickname ?? '').trim().toLowerCase();
+    if (!targetNick) {
+      res.status(400).json({ error: 'Nickname required' });
+      return;
+    }
+    const nextFriends = user.friends.filter((f) => f.toLowerCase() !== targetNick);
+    if (nextFriends.length !== user.friends.length) {
+      user.friends = nextFriends;
+      saveStore();
+    }
+    res.json({ friends: buildFriendsList(user.friends) });
   });
 
   app.post('/api/social/invite', (req, res) => {
