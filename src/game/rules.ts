@@ -1,8 +1,10 @@
 import {
   AVATAR_SKINS,
   BATTLE_PASS_TIERS,
+  createDefaultWeaponStats,
   MAP_LIST,
   MAPS,
+  PASS_SEASON_DURATION_MS,
   WEAPON_SKINS,
 } from './catalog';
 import {
@@ -15,7 +17,10 @@ import {
   MatchSummary,
   PlayerCloudProfile,
   WeaponId,
+  WeaponStatsEntry,
 } from './types';
+
+export { PASS_SEASON_DURATION_MS };
 
 export interface Vec3 {
   x: number;
@@ -712,6 +717,179 @@ export function applyControllerDeadzone(
   };
 }
 
+const WEAPON_IDS: WeaponId[] = [
+  'pulse_carbine',
+  'volt_scatter',
+  'helios_rail',
+  'arc_repeater',
+];
+
+export function normalizeWeaponStats(
+  raw?: Partial<Record<WeaponId, Partial<WeaponStatsEntry>>>
+): Record<WeaponId, WeaponStatsEntry> {
+  const base = createDefaultWeaponStats();
+  if (!raw) return base;
+  for (const id of WEAPON_IDS) {
+    const entry = raw[id];
+    if (!entry) continue;
+    const kills = Math.max(0, Math.round(Number(entry.kills) || 0));
+    const shotsFired = Math.max(0, Math.round(Number(entry.shotsFired) || 0));
+    const shotsHit = Math.min(
+      shotsFired,
+      Math.max(0, Math.round(Number(entry.shotsHit) || 0))
+    );
+    base[id] = { kills, shotsFired, shotsHit };
+  }
+  return base;
+}
+
+export function calculateWeaponAccuracy(
+  entry?: Partial<WeaponStatsEntry> | null
+): number | null {
+  if (!entry) return null;
+  const fired = Math.max(0, Math.round(Number(entry.shotsFired) || 0));
+  if (fired <= 0) return null;
+  const hit = Math.min(fired, Math.max(0, Math.round(Number(entry.shotsHit) || 0)));
+  return Math.round((hit / fired) * 100);
+}
+
+export interface BattlePassCountdown {
+  days: number;
+  hours: number;
+  minutes: number;
+  totalMinutes: number;
+  remainingMs: number;
+  expired: boolean;
+}
+
+export function getBattlePassCountdown(
+  passSeasonEndsAt?: string,
+  nowMs = Date.now()
+): BattlePassCountdown {
+  const parsedEnd = Date.parse(passSeasonEndsAt || '');
+  const endMs = Number.isFinite(parsedEnd)
+    ? parsedEnd
+    : nowMs + PASS_SEASON_DURATION_MS;
+  const remainingMs = Math.max(0, endMs - nowMs);
+  const totalMinutes = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 60000);
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+  const minutes = totalMinutes % 60;
+  return {
+    days,
+    hours,
+    minutes,
+    totalMinutes,
+    remainingMs,
+    expired: remainingMs <= 0,
+  };
+}
+
+export function syncBattlePassSeason(
+  profile: PlayerCloudProfile,
+  nowMs = Date.now()
+): { profile: PlayerCloudProfile; resetTriggered: boolean } {
+  const currentSeason = Math.max(1, Math.round(Number(profile.passSeasonNumber) || 1));
+  const parsedEnd = Date.parse(profile.passSeasonEndsAt || '');
+  if (!Number.isFinite(parsedEnd)) {
+    return {
+      profile: {
+        ...profile,
+        passSeasonNumber: currentSeason,
+        passSeasonEndsAt: new Date(nowMs + PASS_SEASON_DURATION_MS).toISOString(),
+      },
+      resetTriggered: false,
+    };
+  }
+
+  if (nowMs < parsedEnd) {
+    if (profile.passSeasonNumber !== currentSeason) {
+      return {
+        profile: { ...profile, passSeasonNumber: currentSeason },
+        resetTriggered: false,
+      };
+    }
+    return { profile, resetTriggered: false };
+  }
+
+  const elapsedPastEnd = nowMs - parsedEnd;
+  const cycles = Math.max(1, Math.floor(elapsedPastEnd / PASS_SEASON_DURATION_MS) + 1);
+  const nextEndsAt = new Date(parsedEnd + cycles * PASS_SEASON_DURATION_MS).toISOString();
+
+  return {
+    profile: {
+      ...profile,
+      passSeasonNumber: currentSeason + cycles,
+      passSeasonEndsAt: nextEndsAt,
+      battlePassXp: 0,
+      battlePassPremium: false,
+      claimedFreeTiers: [],
+      claimedPremiumTiers: [],
+      lastSyncedAt: new Date(nowMs).toISOString(),
+    },
+    resetTriggered: true,
+  };
+}
+
+export function detectLowPerfGpuString(
+  gpuRenderer: string,
+  hardwareConcurrency = 8
+): boolean {
+  const s = (gpuRenderer || '').trim();
+  if (!s) return hardwareConcurrency > 0 && hardwareConcurrency <= 4;
+  if (/NVIDIA|GeForce|RTX|GTX|Radeon RX|Radeon Pro|Apple M[2-9]|Apple M1 (Pro|Max|Ultra)/i.test(s)) {
+    return false;
+  }
+  if (/Intel.*(UHD|HD Graphics|Iris|Arc\(TM\) Graphics)|Mesa Intel|Mali-|Adreno|PowerVR/i.test(s)) {
+    return true;
+  }
+  return hardwareConcurrency > 0 && hardwareConcurrency <= 4 && /Intel/i.test(s);
+}
+
+export interface AdaptivePerfSettings {
+  tier: number;
+  renderScale: number;
+  shadowSkipFrames: number;
+  disableClearcoat: boolean;
+  particleBudgetRatio: number;
+}
+
+const PERF_TIERS: Omit<AdaptivePerfSettings, 'tier'>[] = [
+  { renderScale: 1.0, shadowSkipFrames: 1, disableClearcoat: false, particleBudgetRatio: 1.0 },
+  { renderScale: 0.78, shadowSkipFrames: 2, disableClearcoat: true, particleBudgetRatio: 0.65 },
+  { renderScale: 0.64, shadowSkipFrames: 4, disableClearcoat: true, particleBudgetRatio: 0.4 },
+  { renderScale: 0.52, shadowSkipFrames: 6, disableClearcoat: true, particleBudgetRatio: 0.25 },
+];
+
+export function getPerfSettingsForTier(tier: number): AdaptivePerfSettings {
+  const safeTier = Math.min(PERF_TIERS.length - 1, Math.max(0, Math.round(tier)));
+  return {
+    tier: safeTier,
+    ...PERF_TIERS[safeTier],
+  };
+}
+
+export function computeAdaptivePerfStep(params: {
+  tier: number;
+  avgFrameMs: number;
+  targetFrameMs?: number;
+  minTier?: number;
+  maxTier?: number;
+}): AdaptivePerfSettings {
+  const minTier = Math.max(0, params.minTier ?? 0);
+  const maxTier = Math.min(PERF_TIERS.length - 1, params.maxTier ?? PERF_TIERS.length - 1);
+  const target = Math.max(8, params.targetFrameMs ?? 16.7);
+  let nextTier = Math.min(maxTier, Math.max(minTier, Math.round(params.tier)));
+
+  if (params.avgFrameMs > target * 1.35 && nextTier < maxTier) {
+    nextTier += 1;
+  } else if (params.avgFrameMs < target * 0.72 && nextTier > minTier) {
+    nextTier -= 1;
+  }
+
+  return getPerfSettingsForTier(nextTier);
+}
+
 export function mergeLocalAndCloudProfiles(
   local: PlayerCloudProfile,
   cloud: PlayerCloudProfile
@@ -719,6 +897,10 @@ export function mergeLocalAndCloudProfiles(
   if (local.accountId !== cloud.accountId) {
     return {
       ...cloud,
+      stats: {
+        ...cloud.stats,
+        weaponStats: normalizeWeaponStats(cloud.stats?.weaponStats),
+      },
       settings: { ...cloud.settings },
       keybinds: { ...cloud.keybinds },
     };
@@ -729,20 +911,67 @@ export function mergeLocalAndCloudProfiles(
   const localNewer = localTs > cloudTs;
   const primary = localNewer ? local : cloud;
 
+  const localWeapons = normalizeWeaponStats(local.stats?.weaponStats);
+  const cloudWeapons = normalizeWeaponStats(cloud.stats?.weaponStats);
+  const mergedWeapons = createDefaultWeaponStats();
+  for (const id of WEAPON_IDS) {
+    const l = localWeapons[id];
+    const c = cloudWeapons[id];
+    const fired = Math.max(l.shotsFired, c.shotsFired);
+    const hit = Math.min(fired, Math.max(l.shotsHit, c.shotsHit));
+    mergedWeapons[id] = {
+      kills: Math.max(l.kills, c.kills),
+      shotsFired: fired,
+      shotsHit: hit,
+    };
+  }
+
+  const localSeason = Math.max(1, Math.round(Number(local.passSeasonNumber) || 1));
+  const cloudSeason = Math.max(1, Math.round(Number(cloud.passSeasonNumber) || 1));
+  const newerSeason = Math.max(localSeason, cloudSeason);
+  const useLocalPass = localSeason > cloudSeason;
+  const useCloudPass = cloudSeason > localSeason;
+  const resolvedPassEndsAt = useLocalPass
+    ? local.passSeasonEndsAt
+    : useCloudPass
+    ? cloud.passSeasonEndsAt
+    : (Date.parse(cloud.passSeasonEndsAt || '') || Infinity) <=
+      (Date.parse(local.passSeasonEndsAt || '') || Infinity)
+    ? cloud.passSeasonEndsAt ?? local.passSeasonEndsAt
+    : local.passSeasonEndsAt ?? cloud.passSeasonEndsAt;
+
   return {
     ...primary,
     accountId: cloud.accountId,
     nickname: cloud.nickname,
     credits: primary.credits,
     xp: Math.max(local.xp, cloud.xp),
-    battlePassXp: Math.max(local.battlePassXp, cloud.battlePassXp),
-    battlePassPremium: local.battlePassPremium || cloud.battlePassPremium,
-    claimedFreeTiers: Array.from(
-      new Set([...cloud.claimedFreeTiers, ...local.claimedFreeTiers])
-    ).sort((a, b) => a - b),
-    claimedPremiumTiers: Array.from(
-      new Set([...cloud.claimedPremiumTiers, ...local.claimedPremiumTiers])
-    ).sort((a, b) => a - b),
+    passSeasonNumber: newerSeason,
+    passSeasonEndsAt: resolvedPassEndsAt,
+    battlePassXp: useLocalPass
+      ? local.battlePassXp
+      : useCloudPass
+      ? cloud.battlePassXp
+      : Math.max(local.battlePassXp, cloud.battlePassXp),
+    battlePassPremium: useLocalPass
+      ? local.battlePassPremium
+      : useCloudPass
+      ? cloud.battlePassPremium
+      : local.battlePassPremium || cloud.battlePassPremium,
+    claimedFreeTiers: useLocalPass
+      ? [...local.claimedFreeTiers]
+      : useCloudPass
+      ? [...cloud.claimedFreeTiers]
+      : Array.from(new Set([...cloud.claimedFreeTiers, ...local.claimedFreeTiers])).sort(
+          (a, b) => a - b
+        ),
+    claimedPremiumTiers: useLocalPass
+      ? [...local.claimedPremiumTiers]
+      : useCloudPass
+      ? [...cloud.claimedPremiumTiers]
+      : Array.from(
+          new Set([...cloud.claimedPremiumTiers, ...local.claimedPremiumTiers])
+        ).sort((a, b) => a - b),
     unlockedWeaponSkins: Array.from(
       new Set([...cloud.unlockedWeaponSkins, ...local.unlockedWeaponSkins])
     ),
@@ -758,6 +987,7 @@ export function mergeLocalAndCloudProfiles(
       deaths: Math.max(local.stats.deaths, cloud.stats.deaths),
       shotsFired: Math.max(local.stats.shotsFired, cloud.stats.shotsFired),
       shotsHit: Math.max(local.stats.shotsHit, cloud.stats.shotsHit),
+      weaponStats: mergedWeapons,
     },
     settings: { ...primary.settings },
     keybinds: { ...primary.keybinds },
@@ -771,8 +1001,9 @@ export function applyMatchRewards(
   shotsFired = 0,
   shotsHit = 0
 ): PlayerCloudProfile {
-  const nextSkins = [...profile.unlockedWeaponSkins];
-  let easterEggUnlocked = profile.easterEggUnlocked;
+  const synced = syncBattlePassSeason(profile).profile;
+  const nextSkins = [...synced.unlockedWeaponSkins];
+  let easterEggUnlocked = synced.easterEggUnlocked;
 
   if (summary.easterEggFound && !easterEggUnlocked) {
     easterEggUnlocked = true;
@@ -781,20 +1012,38 @@ export function applyMatchRewards(
     }
   }
 
+  const currentWeapons = normalizeWeaponStats(synced.stats?.weaponStats);
+  if (summary.weaponStats) {
+    for (const id of WEAPON_IDS) {
+      const add = summary.weaponStats[id];
+      if (!add) continue;
+      const addFired = Math.max(0, Math.round(add.shotsFired || 0));
+      const addHit = Math.min(addFired, Math.max(0, Math.round(add.shotsHit || 0)));
+      const addKills = Math.max(0, Math.round(add.kills || 0));
+      currentWeapons[id] = {
+        kills: currentWeapons[id].kills + addKills,
+        shotsFired: currentWeapons[id].shotsFired + addFired,
+        shotsHit: currentWeapons[id].shotsHit + addHit,
+      };
+    }
+  }
+
   return {
-    ...profile,
-    credits: profile.credits + Math.min(MAX_MATCH_CREDITS, Math.max(0, summary.creditsEarned)),
-    xp: profile.xp + Math.min(MAX_MATCH_XP, Math.max(0, summary.xpEarned)),
-    battlePassXp: profile.battlePassXp + Math.min(MAX_MATCH_XP, Math.max(0, summary.xpEarned)),
+    ...synced,
+    credits: synced.credits + Math.min(MAX_MATCH_CREDITS, Math.max(0, summary.creditsEarned)),
+    xp: synced.xp + Math.min(MAX_MATCH_XP, Math.max(0, summary.xpEarned)),
+    battlePassXp:
+      synced.battlePassXp + Math.min(MAX_MATCH_XP, Math.max(0, summary.xpEarned)),
     unlockedWeaponSkins: nextSkins,
     easterEggUnlocked,
     stats: {
-      matchesPlayed: profile.stats.matchesPlayed + 1,
-      wins: profile.stats.wins + (summary.won ? 1 : 0),
-      tags: profile.stats.tags + summary.tags,
-      deaths: profile.stats.deaths + summary.deaths,
-      shotsFired: profile.stats.shotsFired + shotsFired,
-      shotsHit: profile.stats.shotsHit + shotsHit,
+      matchesPlayed: synced.stats.matchesPlayed + 1,
+      wins: synced.stats.wins + (summary.won ? 1 : 0),
+      tags: synced.stats.tags + summary.tags,
+      deaths: synced.stats.deaths + summary.deaths,
+      shotsFired: synced.stats.shotsFired + shotsFired,
+      shotsHit: synced.stats.shotsHit + shotsHit,
+      weaponStats: currentWeapons,
     },
     lastSyncedAt: new Date().toISOString(),
   };

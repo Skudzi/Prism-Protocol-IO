@@ -12,6 +12,7 @@ import {
   validateMovePacket,
 } from './src/game/anticheat';
 import { createDefaultProfile, DEFAULT_SETTINGS, MAPS } from './src/game/catalog';
+import { normalizeWeaponStats, syncBattlePassSeason } from './src/game/rules';
 import {
   ChatMessage,
   FriendEntry,
@@ -97,6 +98,22 @@ function loadStore(): CloudStoreData {
     for (const u of Object.values(parsed.users)) {
       if (u?.profile) {
         u.profile.settings = { ...DEFAULT_SETTINGS, ...(u.profile.settings ?? {}) };
+        u.profile.stats = {
+          ...(u.profile.stats ?? {
+            matchesPlayed: 0,
+            wins: 0,
+            tags: 0,
+            deaths: 0,
+            shotsFired: 0,
+            shotsHit: 0,
+          }),
+          weaponStats: normalizeWeaponStats(u.profile.stats?.weaponStats),
+        };
+        const seasonSynced = syncBattlePassSeason(u.profile);
+        if (seasonSynced.profile !== u.profile) {
+          u.profile = seasonSynced.profile;
+          dirty = true;
+        }
       }
       if (Array.isArray(u.friends)) {
         const cleanedFriends = u.friends.filter(
@@ -328,6 +345,14 @@ async function startServer() {
       equippedWeaponId: seed?.equippedWeaponId ?? baseProfile.equippedWeaponId,
       equippedWeaponSkinId: seed?.equippedWeaponSkinId ?? baseProfile.equippedWeaponSkinId,
       equippedAvatarSkinId: seed?.equippedAvatarSkinId ?? baseProfile.equippedAvatarSkinId,
+      passSeasonNumber:
+        typeof seed?.passSeasonNumber === 'number' && Number.isFinite(seed.passSeasonNumber)
+          ? Math.max(1, Math.round(seed.passSeasonNumber))
+          : baseProfile.passSeasonNumber,
+      passSeasonEndsAt:
+        typeof seed?.passSeasonEndsAt === 'string' && Number.isFinite(Date.parse(seed.passSeasonEndsAt))
+          ? seed.passSeasonEndsAt
+          : baseProfile.passSeasonEndsAt,
       tutorialCompleted:
         typeof seed?.tutorialCompleted === 'boolean'
           ? seed.tutorialCompleted
@@ -336,7 +361,10 @@ async function startServer() {
         typeof seed?.easterEggUnlocked === 'boolean'
           ? seed.easterEggUnlocked
           : baseProfile.easterEggUnlocked,
-      stats: seed?.stats ?? baseProfile.stats,
+      stats: {
+        ...(seed?.stats ?? baseProfile.stats),
+        weaponStats: normalizeWeaponStats(seed?.stats?.weaponStats),
+      },
       settings: { ...DEFAULT_SETTINGS, ...(seed?.settings ?? {}) },
       keybinds: { ...baseProfile.keybinds, ...(seed?.keybinds ?? {}) },
       accountId: `acc-${crypto.randomUUID().slice(0, 8)}`,
@@ -414,7 +442,7 @@ async function startServer() {
     }
 
     // Merge sanitized cloud save fields
-    user.profile = {
+    const mergedProfile: PlayerCloudProfile = {
       ...user.profile,
       platform: incoming.platform ?? user.profile.platform,
       credits:
@@ -433,6 +461,14 @@ async function startServer() {
         typeof incoming.battlePassPremium === 'boolean'
           ? incoming.battlePassPremium
           : user.profile.battlePassPremium,
+      passSeasonNumber:
+        typeof incoming.passSeasonNumber === 'number' && Number.isFinite(incoming.passSeasonNumber)
+          ? Math.max(1, Math.round(incoming.passSeasonNumber))
+          : user.profile.passSeasonNumber,
+      passSeasonEndsAt:
+        typeof incoming.passSeasonEndsAt === 'string' && Number.isFinite(Date.parse(incoming.passSeasonEndsAt))
+          ? incoming.passSeasonEndsAt
+          : user.profile.passSeasonEndsAt,
       claimedFreeTiers: Array.isArray(incoming.claimedFreeTiers)
         ? incoming.claimedFreeTiers
         : user.profile.claimedFreeTiers,
@@ -458,11 +494,15 @@ async function startServer() {
         typeof incoming.easterEggUnlocked === 'boolean'
           ? incoming.easterEggUnlocked
           : user.profile.easterEggUnlocked,
-      stats: incoming.stats ?? user.profile.stats,
+      stats: {
+        ...(incoming.stats ?? user.profile.stats),
+        weaponStats: normalizeWeaponStats(incoming.stats?.weaponStats ?? user.profile.stats?.weaponStats),
+      },
       settings: { ...DEFAULT_SETTINGS, ...user.profile.settings, ...(incoming.settings ?? {}) },
       keybinds: incoming.keybinds ?? user.profile.keybinds,
       lastSyncedAt: new Date().toISOString(),
     };
+    user.profile = syncBattlePassSeason(mergedProfile).profile;
 
     saveStore();
     res.json({ profile: user.profile });

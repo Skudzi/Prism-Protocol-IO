@@ -289,28 +289,32 @@ function buildEnterableSideBuilding(side: -1 | 1): MapObstacle[] {
     { x: outerX, y: 0, z: 0, w: thick, h: roofY, d: 96, kind: 'building_wall' },
 
     // North End Wall (z = -47.3): 1 centered ground entrance (4.4m wide) + small F2/F3 end peek windows
-    { x: side * 60.6, y: 0, z: -47.3, w: 6.8, h: roofY, d: thick, kind: 'building_wall' },
-    { x: side * 49.4, y: 0, z: -47.3, w: 6.8, h: roofY, d: thick, kind: 'building_wall' },
-    { x: side * 55.0, y: 3.0, z: -47.3, w: 4.4, h: 2.0, d: thick, kind: 'building_wall' }, // F1 door header + F2 sill
-    { x: side * 55.0, y: 6.0, z: -47.3, w: 4.4, h: 2.8, d: thick, kind: 'building_wall' }, // F2 lintel + F3 sill
+    { x: side * 60.25, y: 0, z: -47.3, w: 6.1, h: roofY, d: thick, kind: 'building_wall' },
+    { x: side * 50.1, y: 0, z: -47.3, w: 5.4, h: roofY, d: thick, kind: 'building_wall' },
+    { x: side * 55.0, y: 3.0, z: -47.3, w: 4.4, h: 0.55, d: thick, kind: 'building_wall' }, // F1 door header
+    { x: side * 55.0, y: f2Y, z: -47.3, w: 4.4, h: 1.15, d: thick, kind: 'building_wall' }, // F2 sill
+    { x: side * 55.0, y: 6.0, z: -47.3, w: 4.4, h: 1.35, d: thick, kind: 'building_wall' }, // F2 lintel
+    { x: side * 55.0, y: f3Y, z: -47.3, w: 4.4, h: 1.15, d: thick, kind: 'building_wall' }, // F3 sill
     { x: side * 55.0, y: 9.8, z: -47.3, w: 4.4, h: 1.35, d: thick, kind: 'building_wall' }, // F3 top lintel
 
     // Opposite South End Wall (z = +47.3): 1 centered ground entrance (4.4m wide) + small F2/F3 end peek windows
-    { x: side * 60.6, y: 0, z: 47.3, w: 6.8, h: roofY, d: thick, kind: 'building_wall' },
-    { x: side * 49.4, y: 0, z: 47.3, w: 6.8, h: roofY, d: thick, kind: 'building_wall' },
-    { x: side * 55.0, y: 3.0, z: 47.3, w: 4.4, h: 2.0, d: thick, kind: 'building_wall' },
-    { x: side * 55.0, y: 6.0, z: 47.3, w: 4.4, h: 2.8, d: thick, kind: 'building_wall' },
+    { x: side * 60.25, y: 0, z: 47.3, w: 6.1, h: roofY, d: thick, kind: 'building_wall' },
+    { x: side * 50.1, y: 0, z: 47.3, w: 5.4, h: roofY, d: thick, kind: 'building_wall' },
+    { x: side * 55.0, y: 3.0, z: 47.3, w: 4.4, h: 0.55, d: thick, kind: 'building_wall' },
+    { x: side * 55.0, y: f2Y, z: 47.3, w: 4.4, h: 1.15, d: thick, kind: 'building_wall' },
+    { x: side * 55.0, y: 6.0, z: 47.3, w: 4.4, h: 1.35, d: thick, kind: 'building_wall' },
+    { x: side * 55.0, y: f3Y, z: 47.3, w: 4.4, h: 1.15, d: thick, kind: 'building_wall' },
     { x: side * 55.0, y: 9.8, z: 47.3, w: 4.4, h: 1.35, d: thick, kind: 'building_wall' },
 
-    // Floor 2 Slab (walkable at y = 3.80) leaving open stairwell X:[59.6..63.3], Z:[-25.2..-12.8]
-    { x: midX, y: f2SlabY, z: -36.0, w: 17.5, h: slabH, d: 21.6, kind: 'building_floor' },
-    { x: midX, y: f2SlabY, z: 17.0, w: 17.5, h: slabH, d: 59.6, kind: 'building_floor' },
-    { x: side * 53.5, y: f2SlabY, z: -19.0, w: 12.2, h: slabH, d: 12.4, kind: 'building_floor' },
+    // Floor 2 Slab (walkable at y = 3.80) flush inside walls & stairwell X:[59.8..63.3], Z:[-25.2..-12.8]
+    { x: midX, y: f2SlabY, z: -35.9, w: 15.9, h: slabH, d: 21.4, kind: 'building_floor' },
+    { x: midX, y: f2SlabY, z: 16.9, w: 15.9, h: slabH, d: 59.4, kind: 'building_floor' },
+    { x: side * 53.3, y: f2SlabY, z: -19.0, w: 11.8, h: slabH, d: 12.4, kind: 'building_floor' },
 
-    // Floor 3 Slab (walkable at y = 7.60) leaving open stairwell X:[59.6..63.3], Z:[+12.8..+25.2]
-    { x: midX, y: f3SlabY, z: -17.0, w: 17.5, h: slabH, d: 59.6, kind: 'building_floor' },
-    { x: midX, y: f3SlabY, z: 36.0, w: 17.5, h: slabH, d: 21.6, kind: 'building_floor' },
-    { x: side * 53.5, y: f3SlabY, z: 19.0, w: 12.2, h: slabH, d: 12.4, kind: 'building_floor' },
+    // Floor 3 Slab (walkable at y = 7.60) flush inside walls & stairwell X:[59.8..63.3], Z:[+12.8..+25.2]
+    { x: midX, y: f3SlabY, z: -16.9, w: 15.9, h: slabH, d: 59.4, kind: 'building_floor' },
+    { x: midX, y: f3SlabY, z: 35.9, w: 15.9, h: slabH, d: 21.4, kind: 'building_floor' },
+    { x: side * 53.3, y: f3SlabY, z: 19.0, w: 11.8, h: slabH, d: 12.4, kind: 'building_floor' },
 
     // Full Concrete Roof Slab at y = 11.15
     { x: midX, y: roofY, z: 0, w: 19.3, h: 0.55, d: 96, kind: 'building_roof' },
@@ -379,7 +383,7 @@ function buildEnterableSideBuilding(side: -1 | 1): MapObstacle[] {
 
   // Floor 1 Inner Courtyard Wall: ONLY 1 middle entrance (z = -2.3..+2.3) + 4 small hiding windows
   // Small windows at z = -32.5, -18.5, +18.5, +32.5 (each 2.6m wide); huge solid hiding spans everywhere else!
-  addSolidInnerWall(-48.0, -33.8, 0, f1H);
+  addSolidInnerWall(-46.6, -33.8, 0, f1H);
   addSmallWindow(-32.5, 2.6, 0);
   addSolidInnerWall(-31.2, -19.8, 0, f1H);
   addSmallWindow(-18.5, 2.6, 0);
@@ -390,11 +394,11 @@ function buildEnterableSideBuilding(side: -1 | 1): MapObstacle[] {
   addSmallWindow(18.5, 2.6, 0);
   addSolidInnerWall(19.8, 31.2, 0, f1H);
   addSmallWindow(32.5, 2.6, 0);
-  addSolidInnerWall(33.8, 48.0, 0, f1H);
+  addSolidInnerWall(33.8, 46.6, 0, f1H);
 
   // Floors 2 & 3 Inner Courtyard Walls: zero doorways, 5 small peek windows per floor between solid hiding walls
   for (const fy of [f2Y, f3Y]) {
-    addSolidInnerWall(-48.0, -33.8, fy, f1H);
+    addSolidInnerWall(-46.6, -33.8, fy, f1H);
     addSmallWindow(-32.5, 2.6, fy);
     addSolidInnerWall(-31.2, -19.8, fy, f1H);
     addSmallWindow(-18.5, 2.6, fy);
@@ -404,7 +408,7 @@ function buildEnterableSideBuilding(side: -1 | 1): MapObstacle[] {
     addSmallWindow(18.5, 2.6, fy);
     addSolidInnerWall(19.8, 31.2, fy, f1H);
     addSmallWindow(32.5, 2.6, fy);
-    addSolidInnerWall(33.8, 48.0, fy, f1H);
+    addSolidInnerWall(33.8, 46.6, fy, f1H);
   }
 
   // Interior Cover across all 3 floors (concrete pillars & varied wooden boxes for hiding)
@@ -483,11 +487,11 @@ function buildSandyardMapObstacles(): MapObstacle[] {
     obs.push({ x: xWall, y: yBase, z: (zMin + zMax) * 0.5, w: thick, h: wallH, d, kind: 'sandstone_wall' });
   };
 
-  // Left (-X) & Right (+X) Side Walls of Mid Building
+  // Left (-X) & Right (+X) Side Walls of Mid Building (flush with N/S walls at ±22.6)
   for (const xSide of [-1, 1]) {
     const xWall = xSide * 19.3;
     // Floor 1: 5 bigger windows per side at z = -18, -9, 0, +9, +18
-    addSidePier(xWall, -24.0, -19.8, 0, f1H);
+    addSidePier(xWall, -22.6, -19.8, 0, f1H);
     addBiggerSideWindow(xWall, -18.0, 0, f1H);
     addSidePier(xWall, -16.2, -10.8, 0, f1H);
     addBiggerSideWindow(xWall, -9.0, 0, f1H);
@@ -497,10 +501,10 @@ function buildSandyardMapObstacles(): MapObstacle[] {
     addBiggerSideWindow(xWall, 9.0, 0, f1H);
     addSidePier(xWall, 10.8, 16.2, 0, f1H);
     addBiggerSideWindow(xWall, 18.0, 0, f1H);
-    addSidePier(xWall, 19.8, 24.0, 0, f1H);
+    addSidePier(xWall, 19.8, 22.6, 0, f1H);
 
     // Floor 2: 4 bigger windows (-18, -9.5, +9.5, +18) + centered exterior stair doorway (z = -2.3..+2.3)
-    addSidePier(xWall, -24.0, -19.8, f2Y, f2H);
+    addSidePier(xWall, -22.6, -19.8, f2Y, f2H);
     addBiggerSideWindow(xWall, -18.0, f2Y, f2H);
     addSidePier(xWall, -16.2, -11.3, f2Y, f2H);
     addBiggerSideWindow(xWall, -9.5, f2Y, f2H);
@@ -511,7 +515,7 @@ function buildSandyardMapObstacles(): MapObstacle[] {
     addBiggerSideWindow(xWall, 9.5, f2Y, f2H);
     addSidePier(xWall, 11.3, 16.2, f2Y, f2H);
     addBiggerSideWindow(xWall, 18.0, f2Y, f2H);
-    addSidePier(xWall, 19.8, 24.0, f2Y, f2H);
+    addSidePier(xWall, 19.8, 22.6, f2Y, f2H);
 
     // Outside Left & Right Staircases straight from Ground (y=0) up to Floor 2 doorway (y=4.30m)
     // 14 steps x 0.307m rise (<= 0.38m smooth auto-step climb), 4.6m wide at z = 0
@@ -692,15 +696,15 @@ function buildSandyardMapObstacles(): MapObstacle[] {
     { x: 42.0, y: 0, z: -22.0, w: 1.5, h: 3.4, d: 14.0, kind: 'sandstone_wall' },
     { x: 42.0, y: 0, z: 0.0, w: 1.5, h: 3.05, d: 11.0, kind: 'sandstone_wall' },
     { x: 42.0, y: 0, z: 22.0, w: 1.5, h: 3.4, d: 14.0, kind: 'sandstone_wall' },
-    { x: 55.0, y: 3.05, z: 0, w: 26.0, h: 0.35, d: 34.0, kind: 'building_floor' },
+    { x: 55.375, y: 3.05, z: 0, w: 25.25, h: 0.35, d: 29.9, kind: 'building_floor' },
     { x: 42.4, y: 3.4, z: -8.0, w: 0.65, h: 1.05, d: 12.0, kind: 'sandstone_wall' },
     { x: 42.4, y: 3.4, z: 8.0, w: 0.65, h: 1.05, d: 12.0, kind: 'sandstone_wall' }
   );
   for (let idx = 0; idx < 10; idx++) {
     const stepH = ((idx + 1) / 10) * 3.4;
     obs.push(
-      { x: 55.0, y: 0, z: -26.0 + idx * 0.95, w: 5.0, h: stepH, d: 0.95, kind: 'sandstone_wall' },
-      { x: 55.0, y: 0, z: 26.0 - idx * 0.95, w: 5.0, h: stepH, d: 0.95, kind: 'sandstone_wall' }
+      { x: 55.0, y: 0, z: -24.0 + idx * 0.95, w: 5.0, h: stepH, d: 0.95, kind: 'sandstone_wall' },
+      { x: 55.0, y: 0, z: 24.0 - idx * 0.95, w: 5.0, h: stepH, d: 0.95, kind: 'sandstone_wall' }
     );
   }
 
@@ -785,8 +789,8 @@ function buildSandyardMapObstacles(): MapObstacle[] {
 }
 
 function buildPerimeterStreetLights(arenaHalfSize: number): MapObstacle[] {
-  const sNear = 20;
-  const sFar = Math.round(arenaHalfSize * 0.68);
+  const sNear = 25;
+  const sFar = Math.round(arenaHalfSize * 0.72);
   const spots: Array<[number, number]> = [
     [-4.4, -sNear],
     [4.4, -sFar],
@@ -1059,7 +1063,7 @@ export const MAPS: Record<MapId, MapDef> = {
       { x: 46, y: 0, z: 0, w: 4.5, h: 3.4, d: 7.5, kind: 'monolith' },
       // Secluded NE basalt alcove concealing the hidden vault relic at (58.5, 1.9, -58.5)
       { x: 52.5, y: 0, z: -57.5, w: 1.8, h: 4.2, d: 8.8, kind: 'monolith' },
-      { x: 57.5, y: 0, z: -52.5, w: 8.8, h: 4.2, d: 1.8, kind: 'monolith' },
+      { x: 57.65, y: 0, z: -52.5, w: 8.5, h: 4.2, d: 1.8, kind: 'monolith' },
       ...buildPerimeterStreetLights(68),
     ],
     jumpPads: [
@@ -1494,7 +1498,19 @@ export const DEFAULT_SETTINGS: GameSettings = {
   crossPlatformEnabled: true,
 };
 
+export const PASS_SEASON_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+
+export function createDefaultWeaponStats() {
+  return {
+    pulse_carbine: { kills: 0, shotsFired: 0, shotsHit: 0 },
+    volt_scatter: { kills: 0, shotsFired: 0, shotsHit: 0 },
+    helios_rail: { kills: 0, shotsFired: 0, shotsHit: 0 },
+    arc_repeater: { kills: 0, shotsFired: 0, shotsHit: 0 },
+  };
+}
+
 export function createDefaultProfile(nickname = 'Vanguard01'): PlayerCloudProfile {
+  const nowMs = Date.now();
   return {
     accountId: `local-${nickname.toLowerCase()}`,
     nickname,
@@ -1503,6 +1519,8 @@ export function createDefaultProfile(nickname = 'Vanguard01'): PlayerCloudProfil
     xp: 0,
     battlePassXp: 0,
     battlePassPremium: false,
+    passSeasonNumber: 1,
+    passSeasonEndsAt: new Date(nowMs + PASS_SEASON_DURATION_MS).toISOString(),
     claimedFreeTiers: [],
     claimedPremiumTiers: [],
     unlockedWeaponSkins: ['cobalt_standard'],
@@ -1519,9 +1537,10 @@ export function createDefaultProfile(nickname = 'Vanguard01'): PlayerCloudProfil
       deaths: 0,
       shotsFired: 0,
       shotsHit: 0,
+      weaponStats: createDefaultWeaponStats(),
     },
     settings: { ...DEFAULT_SETTINGS },
     keybinds: { ...DEFAULT_KEYBINDS },
-    lastSyncedAt: new Date().toISOString(),
+    lastSyncedAt: new Date(nowMs).toISOString(),
   };
 }

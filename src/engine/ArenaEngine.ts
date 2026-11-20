@@ -1,7 +1,16 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { AVATAR_SKINS, MAPS, WEAPONS, WEAPON_LIST, WEAPON_SKINS } from '../game/catalog';
 import {
+  AVATAR_SKINS,
+  createDefaultWeaponStats,
+  MAPS,
+  WEAPONS,
+  WEAPON_LIST,
+  WEAPON_SKINS,
+} from '../game/catalog';
+import {
+  AdaptivePerfSettings,
   applyControllerDeadzone,
   applyUnderfootJumpVelocity,
   calculateDamage,
@@ -11,8 +20,11 @@ import {
   canTriggerUnderfootJump,
   castLaserRay,
   checkHealOrbPickup,
+  computeAdaptivePerfStep,
   DEATH_RESPAWN_COOLDOWN_MS,
+  detectLowPerfGpuString,
   getHealOrbScheduleTimes,
+  getPerfSettingsForTier,
   KILL_CAM_DURATION_MS,
   KillCamSample,
   pickOpenHealOrbPosition,
@@ -38,10 +50,12 @@ import {
   ShadowQuality,
   WeaponDef,
   WeaponId,
+  WeaponStatsEntry,
 } from '../game/types';
 import { soundEngine } from './audio';
 import {
   AnimatedAvatarRig,
+  applyWorldBoxUVs,
   buildAvatarRig,
   buildBridgeStructure,
   buildBuildingFloor,
@@ -203,18 +217,21 @@ const _up = new THREE.Vector3(0, 1, 0);
 const _mat4 = new THREE.Matrix4();
 const _scale = new THREE.Vector3();
 
-function detectSoftwareGl(): boolean {
+function detectGpuInfo(): { isSoftwareGl: boolean; gpuString: string } {
   try {
     const canvas = document.createElement('canvas');
     const gl = canvas.getContext('webgl2');
-    if (!gl) return true;
+    if (!gl) return { isSoftwareGl: true, gpuString: '' };
     const ext = gl.getExtension('WEBGL_debug_renderer_info');
     const param = ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER;
-    const gpu = String(gl.getParameter(param));
+    const gpu = String(gl.getParameter(param) || '');
     gl.getExtension('WEBGL_lose_context')?.loseContext();
-    return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
+    return {
+      isSoftwareGl: /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu),
+      gpuString: gpu,
+    };
   } catch {
-    return true;
+    return { isSoftwareGl: true, gpuString: '' };
   }
 }
 
@@ -225,10 +242,16 @@ export class ArenaEngine {
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private isSoftwareGl: boolean;
+  private isLowPerfDevice: boolean;
+  private perfSettings: AdaptivePerfSettings;
+  private emaFrameMs = 16.6;
+  private lastPerfEvalMs = 0;
+  private renderFrameCounter = 0;
   private shadowTex: THREE.CanvasTexture;
   private envTex: THREE.Texture;
   private keyLight: THREE.DirectionalLight | null = null;
   private currentShadowSize = 2048;
+  private mapPooledMaterials: THREE.Material[] = [];
 
   private mapGroup = new THREE.Group();
   private botsGroup = new THREE.Group();
@@ -305,6 +328,7 @@ export class ArenaEngine {
   private teamScoreAmber = 0;
   private shotsFired = 0;
   private shotsHit = 0;
+  private weaponMatchStats: Record<WeaponId, WeaponStatsEntry> = createDefaultWeaponStats();
   private matchTimeRemaining = 120;
   private matchDuration = 120;
   private elapsedMatchSec = 0;
@@ -368,9 +392,16 @@ export class ArenaEngine {
     this.keybinds = keybinds;
     this.callbacks = callbacks;
 
-    this.isSoftwareGl = detectSoftwareGl();
+    const gpuInfo = detectGpuInfo();
+    this.isSoftwareGl = gpuInfo.isSoftwareGl;
+    const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 8 : 8;
+    this.isLowPerfDevice = !this.isSoftwareGl && detectLowPerfGpuString(gpuInfo.gpuString, cores);
+    this.perfSettings = this.isLowPerfDevice
+      ? getPerfSettingsForTier(1)
+      : getPerfSettingsForTier(0);
+
     this.renderer = new THREE.WebGLRenderer({
-      antialias: !this.isSoftwareGl,
+      antialias: !this.isSoftwareGl && !this.isLowPerfDevice,
       powerPreference: 'high-performance',
       stencil: true,
     });
@@ -378,12 +409,17 @@ export class ArenaEngine {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.12;
     this.renderer.setPixelRatio(
-      this.isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2)
+      this.isSoftwareGl
+        ? 1
+        : Math.min(window.devicePixelRatio, 2) * this.perfSettings.renderScale
     );
     const shadowsActive =
       !this.isSoftwareGl && settings.shadowsEnabled && settings.shadowQuality !== 'off';
     this.renderer.shadowMap.enabled = shadowsActive;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = this.isLowPerfDevice
+      ? THREE.PCFShadowMap
+      : THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.autoUpdate = this.isSoftwareGl;
 
     const w = container.clientWidth || window.innerWidth;
     const h = container.clientHeight || window.innerHeight;
@@ -655,19 +691,25 @@ export class ArenaEngine {
   };
 
   private getShadowMapSize(q: ShadowQuality): number {
+    let size = 2048;
     switch (q) {
       case 'off':
         return 0;
       case 'low':
-        return 512;
+        size = 512;
+        break;
       case 'medium':
-        return 1024;
+        size = 1024;
+        break;
       case 'ultra':
-        return 4096;
+        size = 4096;
+        break;
       case 'high':
       default:
-        return 2048;
+        size = 2048;
+        break;
     }
+    return this.isLowPerfDevice ? Math.min(1024, size) : size;
   }
 
   public updateSettings(settings: GameSettings, keybinds: Keybinds) {
@@ -695,6 +737,9 @@ export class ArenaEngine {
           this.keyLight.shadow.map.dispose();
           this.keyLight.shadow.map = null;
         }
+      }
+      if (shadowsActive) {
+        this.renderer.shadowMap.needsUpdate = true;
       }
     }
 
@@ -733,7 +778,9 @@ export class ArenaEngine {
     }
     const skin = WEAPON_SKINS.find((s) => s.id === this.weaponSkinId) ?? WEAPON_SKINS[0];
     const avatarSkin = AVATAR_SKINS.find((a) => a.id === this.avatarSkinId) ?? AVATAR_SKINS[0];
-    this.weaponMesh = buildWeaponViewModel(this.weaponId, skin, avatarSkin);
+    this.weaponMesh = buildWeaponViewModel(this.weaponId, skin, avatarSkin, {
+      disableClearcoat: this.perfSettings.disableClearcoat,
+    });
     this.weaponMount.add(this.weaponMesh);
   }
 
@@ -835,6 +882,7 @@ export class ArenaEngine {
     this.teamScoreAmber = 0;
     this.shotsFired = 0;
     this.shotsHit = 0;
+    this.weaponMatchStats = createDefaultWeaponStats();
     this.underfootJumpCooldownMs = 0;
     this.matchDuration = isTutorial ? 180 : 120;
     this.matchTimeRemaining = this.matchDuration;
@@ -901,21 +949,186 @@ export class ArenaEngine {
     }
   }
 
-  private buildMapScene(mapId: MapId) {
-    this.mapId = mapId;
-    const map = MAPS[mapId];
-
-    // Clear previous map meshes
+  private clearMapScene() {
+    const disposedGeos = new Set<THREE.BufferGeometry>();
+    const disposedMats = new Set<THREE.Material>();
+    this.mapGroup.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.isMesh) {
+        if (mesh.geometry && !disposedGeos.has(mesh.geometry)) {
+          disposedGeos.add(mesh.geometry);
+          mesh.geometry.dispose();
+        }
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const m of mats) {
+          if (m && !disposedMats.has(m)) {
+            disposedMats.add(m);
+            m.dispose();
+          }
+        }
+      }
+    });
+    for (const pm of this.mapPooledMaterials) {
+      if (!disposedMats.has(pm)) {
+        disposedMats.add(pm);
+        pm.dispose();
+      }
+    }
+    this.mapPooledMaterials = [];
     while (this.mapGroup.children.length > 0) {
       this.mapGroup.remove(this.mapGroup.children[0]);
     }
     this.easterEggRig = null;
     this.jumpPadRings = [];
+  }
+
+  private optimizeStaticMapGroup(protectedRoots: Set<THREE.Object3D>) {
+    this.mapGroup.updateMatrixWorld(true);
+
+    const matPool = new Map<string, THREE.Material>();
+    const buckets = new Map<
+      string,
+      {
+        material: THREE.Material;
+        castShadow: boolean;
+        receiveShadow: boolean;
+        geos: THREE.BufferGeometry[];
+      }
+    >();
+    const toRemove: THREE.Mesh[] = [];
+
+    const isProtected = (obj: THREE.Object3D): boolean => {
+      let cur: THREE.Object3D | null = obj;
+      while (cur) {
+        if (protectedRoots.has(cur)) return true;
+        cur = cur.parent;
+      }
+      return false;
+    };
+
+    const getMatSignature = (m: THREE.Material): string | null => {
+      if (m instanceof THREE.MeshStandardMaterial) {
+        if (m.transparent) return null;
+        return [
+          'std',
+          m.color.getHexString(),
+          m.map?.uuid ?? '',
+          m.bumpMap?.uuid ?? '',
+          m.bumpScale.toFixed(4),
+          m.roughness.toFixed(3),
+          m.metalness.toFixed(3),
+          m.emissive.getHexString(),
+          m.emissiveIntensity.toFixed(3),
+          m.flatShading ? '1' : '0',
+          m.polygonOffset ? '1' : '0',
+          m.polygonOffsetFactor,
+          m.polygonOffsetUnits,
+          m.side,
+        ].join('|');
+      }
+      return null;
+    };
+
+    const tempBox = new THREE.Box3();
+    const tempSize = new THREE.Vector3();
+
+    this.mapGroup.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh || isProtected(mesh)) return;
+      if (Array.isArray(mesh.material)) return;
+
+      const sig = getMatSignature(mesh.material);
+      if (!sig) return;
+
+      let pooledMat = matPool.get(sig);
+      if (!pooledMat) {
+        pooledMat = mesh.material;
+        matPool.set(sig, pooledMat);
+        this.mapPooledMaterials.push(pooledMat);
+      }
+
+      const rawGeo = mesh.geometry;
+      const cloned = rawGeo.index ? rawGeo.toNonIndexed() : rawGeo.clone();
+      // Keep only standard attributes so mergeGeometries never fails on mismatched attributes
+      for (const attrName of Object.keys(cloned.attributes)) {
+        if (attrName !== 'position' && attrName !== 'normal' && attrName !== 'uv') {
+          cloned.deleteAttribute(attrName);
+        }
+      }
+      if (!cloned.attributes.normal) {
+        cloned.computeVertexNormals();
+      }
+      if (!cloned.attributes.uv) {
+        const count = cloned.attributes.position.count;
+        cloned.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(count * 2), 2));
+      }
+      cloned.applyMatrix4(mesh.matrixWorld);
+      cloned.computeBoundingBox();
+
+      let castShadow = mesh.castShadow;
+      if (castShadow && cloned.boundingBox) {
+        tempBox.copy(cloned.boundingBox);
+        tempBox.getSize(tempSize);
+        const maxDim = Math.max(tempSize.x, tempSize.y, tempSize.z);
+        if (maxDim < 0.35 && tempBox.min.y > 0.1) {
+          castShadow = false;
+        }
+      }
+
+      const bucketKey = `${pooledMat.uuid}|${castShadow ? 1 : 0}|${mesh.receiveShadow ? 1 : 0}`;
+      let bucket = buckets.get(bucketKey);
+      if (!bucket) {
+        bucket = {
+          material: pooledMat,
+          castShadow,
+          receiveShadow: mesh.receiveShadow,
+          geos: [],
+        };
+        buckets.set(bucketKey, bucket);
+      }
+      bucket.geos.push(cloned);
+      toRemove.push(mesh);
+    });
+
+    for (const oldMesh of toRemove) {
+      oldMesh.parent?.remove(oldMesh);
+      oldMesh.geometry.dispose();
+    }
+
+    const staticBatchGroup = new THREE.Group();
+    staticBatchGroup.name = 'static_map_batch';
+    for (const bucket of buckets.values()) {
+      if (bucket.geos.length === 0) continue;
+      const merged =
+        bucket.geos.length === 1 ? bucket.geos[0] : mergeGeometries(bucket.geos, false);
+      if (merged) {
+        const batchMesh = new THREE.Mesh(merged, bucket.material);
+        batchMesh.castShadow = bucket.castShadow;
+        batchMesh.receiveShadow = bucket.receiveShadow;
+        batchMesh.matrixAutoUpdate = false;
+        batchMesh.updateMatrix();
+        staticBatchGroup.add(batchMesh);
+      }
+      if (bucket.geos.length > 1) {
+        for (const g of bucket.geos) g.dispose();
+      }
+    }
+    this.mapGroup.add(staticBatchGroup);
+  }
+
+  private buildMapScene(mapId: MapId) {
+    this.mapId = mapId;
+    const map = MAPS[mapId];
+
+    // Dispose and clear previous map meshes cleanly
+    this.clearMapScene();
 
     const fogScale = 180 / Math.max(60, this.settings.renderDistance || 180);
     this.scene.background = new THREE.Color(map.skyColor);
     this.scene.fog = new THREE.FogExp2(map.fogColor, map.fogDensity * fogScale);
     this.renderer.toneMappingExposure = map.isDaylight ? 1.02 : 1.12;
+
+    const protectedRoots = new Set<THREE.Object3D>();
 
     // Gradient Sky Dome for realistic atmospheric depth (always inside camera.far)
     const skyRadius = Math.max(320, map.arenaHalfSize * 4.0);
@@ -923,6 +1136,7 @@ export class ArenaEngine {
       new THREE.SphereGeometry(skyRadius, 32, 20),
       createSkyDomeMaterial(map.skyTopColor, map.skyHorizonColor)
     );
+    protectedRoots.add(skyDome);
     this.mapGroup.add(skyDome);
 
     // 3-point lighting with warm/cool atmospheric contrast (gentle exposure for daylight)
@@ -960,7 +1174,11 @@ export class ArenaEngine {
     accentPoint.position.set(0, 9.5, 0);
     this.mapGroup.add(accentPoint);
 
-    const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
+    const rawMaxAniso = this.renderer.capabilities.getMaxAnisotropy();
+    const maxAniso =
+      this.isLowPerfDevice || this.perfSettings.tier >= 1
+        ? Math.min(4, rawMaxAniso)
+        : rawMaxAniso;
     const isTrampledField = map.floorStyle === 'trampled_earth';
     const isSandyard = map.floorStyle === 'sandyard';
     const floorTex = isTrampledField
@@ -1029,7 +1247,9 @@ export class ArenaEngine {
         [map.arenaHalfSize, 0, 0.9, arenaSize - 0.9, false],
       ];
       for (const [wx, wz, ww, wd, alongX] of borderDefs) {
-        const wall = new THREE.Mesh(new THREE.BoxGeometry(ww, borderH, wd), borderMat);
+        const wallGeo = new THREE.BoxGeometry(ww, borderH, wd);
+        applyWorldBoxUVs(wallGeo, ww, borderH, wd, 4.5, Math.max(4.5, borderH));
+        const wall = new THREE.Mesh(wallGeo, borderMat);
         wall.position.set(wx, borderH * 0.5, wz);
         wall.castShadow = true;
         wall.receiveShadow = true;
@@ -1108,7 +1328,9 @@ export class ArenaEngine {
         [map.arenaHalfSize, 0, 0.9, arenaSize - 0.9, false],
       ];
       for (const [wx, wz, ww, wd, alongX] of wallDefs) {
-        const wall = new THREE.Mesh(new THREE.BoxGeometry(ww, h, wd), wallMat);
+        const wallGeo = new THREE.BoxGeometry(ww, h, wd);
+        applyWorldBoxUVs(wallGeo, ww, h, wd, 5.0, Math.max(5.0, h));
+        const wall = new THREE.Mesh(wallGeo, wallMat);
         wall.position.set(wx, h / 2, wz);
         wall.receiveShadow = true;
         this.mapGroup.add(wall);
@@ -1123,7 +1345,7 @@ export class ArenaEngine {
 
       for (let i = -2; i <= 2; i++) {
         const beam = new THREE.Mesh(new THREE.BoxGeometry(arenaSize, 0.45, 0.65), wallMat);
-        beam.position.set(0, 9.6, i * (map.arenaHalfSize * 0.38));
+        beam.position.set(0, 9.725, i * (map.arenaHalfSize * 0.38));
         this.mapGroup.add(beam);
       }
     }
@@ -1131,7 +1353,7 @@ export class ArenaEngine {
     // Trampled earth worn footpaths + building interior concrete slabs & TDM spawn zone strips for Map 1
     if (isTrampledField && concreteTex) {
       const pathTex = createTrampledPathOverlayTexture(maxAniso);
-      const pathMat = new THREE.MeshStandardMaterial({
+      const pathMatNS = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         map: pathTex.map,
         bumpMap: pathTex.bumpMap,
@@ -1144,12 +1366,26 @@ export class ArenaEngine {
         polygonOffsetFactor: -2,
         polygonOffsetUnits: -2,
       });
+      const pathMatEW = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        map: pathTex.map,
+        bumpMap: pathTex.bumpMap,
+        bumpScale: 0.1,
+        transparent: true,
+        roughness: 0.92,
+        metalness: 0.02,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -3,
+        polygonOffsetUnits: -3,
+      });
 
       const addDirtPath = (x: number, z: number, w: number, len: number, rotZ = 0) => {
-        const strip = new THREE.Mesh(new THREE.PlaneGeometry(w, len), pathMat);
+        const isEW = Math.abs(rotZ) > 0.1;
+        const strip = new THREE.Mesh(new THREE.PlaneGeometry(w, len), isEW ? pathMatEW : pathMatNS);
         strip.rotation.x = -Math.PI / 2;
         strip.rotation.z = rotZ;
-        strip.position.set(x, 0.032, z);
+        strip.position.set(x, isEW ? 0.038 : 0.03, z);
         strip.receiveShadow = true;
         this.mapGroup.add(strip);
       };
@@ -1189,24 +1425,24 @@ export class ArenaEngine {
         color: 0x2563eb,
         roughness: 0.85,
         polygonOffset: true,
-        polygonOffsetFactor: -3,
-        polygonOffsetUnits: -3,
+        polygonOffsetFactor: -4,
+        polygonOffsetUnits: -4,
       });
       const redZoneMat = new THREE.MeshStandardMaterial({
         color: 0xdc2626,
         roughness: 0.85,
         polygonOffset: true,
-        polygonOffsetFactor: -3,
-        polygonOffsetUnits: -3,
+        polygonOffsetFactor: -4,
+        polygonOffsetUnits: -4,
       });
       const blueStrip = new THREE.Mesh(new THREE.PlaneGeometry(34, 1.4), blueZoneMat);
       blueStrip.rotation.x = -Math.PI / 2;
-      blueStrip.position.set(0, 0.04, 62);
+      blueStrip.position.set(0, 0.046, 62);
       this.mapGroup.add(blueStrip);
 
       const redStrip = new THREE.Mesh(new THREE.PlaneGeometry(34, 1.4), redZoneMat);
       redStrip.rotation.x = -Math.PI / 2;
-      redStrip.position.set(0, 0.04, -62);
+      redStrip.position.set(0, 0.046, -62);
       this.mapGroup.add(redStrip);
     }
 
@@ -1312,6 +1548,7 @@ export class ArenaEngine {
     for (const pad of map.jumpPads) {
       const built = buildJumpPad(map.accentColor);
       built.group.position.set(pad.x, pad.y, pad.z);
+      protectedRoots.add(built.ring);
       this.mapGroup.add(built.group);
       this.jumpPadRings.push(built.ring);
     }
@@ -1408,7 +1645,14 @@ export class ArenaEngine {
     if (map.easterEgg) {
       this.easterEggRig = buildEasterEggMonolith();
       this.easterEggRig.group.position.set(map.easterEgg.x, 0, map.easterEgg.z);
+      protectedRoots.add(this.easterEggRig.group);
       this.mapGroup.add(this.easterEggRig.group);
+    }
+
+    // Merge static geometry & pool identical materials for 100%+ FPS gain
+    this.optimizeStaticMapGroup(protectedRoots);
+    if (!this.isSoftwareGl && this.renderer.shadowMap.enabled) {
+      this.renderer.shadowMap.needsUpdate = true;
     }
 
     // Also populate idle showcase bots during Title Tour
@@ -1665,6 +1909,7 @@ export class ArenaEngine {
 
   private spawnSparks(point: { x: number; y: number; z: number }, count: number) {
     if (!this.settings.particlesEnabled) return;
+    const budgetCount = Math.max(1, Math.round(count * this.perfSettings.particleBudgetRatio));
     let spawned = 0;
     for (const sp of this.sparks) {
       if (!sp.active) {
@@ -1677,7 +1922,7 @@ export class ArenaEngine {
         sp.vz = (Math.random() - 0.5) * 8;
         sp.life = 0.28 + Math.random() * 0.16;
         spawned++;
-        if (spawned >= count) break;
+        if (spawned >= budgetCount) break;
       }
     }
   }
@@ -1816,6 +2061,7 @@ export class ArenaEngine {
     let underfootTriggered = false;
     for (let p = 0; p < weapon.pellets; p++) {
       this.shotsFired++;
+      this.weaponMatchStats[this.weaponId].shotsFired++;
       const dir = {
         x: _vec3C.x + (Math.random() - 0.5) * weapon.spread,
         y: _vec3C.y + (Math.random() - 0.5) * weapon.spread,
@@ -1869,6 +2115,7 @@ export class ArenaEngine {
         }
       } else if (hit.hitType === 'target' && hit.targetId) {
         this.shotsHit++;
+        this.weaponMatchStats[this.weaponId].shotsHit++;
         const isHeadshot = hit.hitZone === 'head';
         const dmg = calculateDamage(weapon.damage, hit.hitZone ?? 'body');
         const bot = this.bots.find((b) => b.id === hit.targetId);
@@ -1884,6 +2131,7 @@ export class ArenaEngine {
             bot.respawnTimer = this.isTutorial ? 999 : 3.2;
             bot.rig.group.visible = false;
             this.tags++;
+            this.weaponMatchStats[this.weaponId].kills++;
             if (this.gameMode === 'tdm') {
               this.teamScoreCyan += 1;
             }
@@ -1995,7 +2243,43 @@ export class ArenaEngine {
       }
 
       this.update(dt, now);
+
+      // Shadow map update cadence throttling for high FPS on integrated GPUs
+      this.renderFrameCounter++;
+      if (!this.isSoftwareGl && this.renderer.shadowMap.enabled) {
+        if (this.renderFrameCounter % this.perfSettings.shadowSkipFrames === 0) {
+          this.renderer.shadowMap.needsUpdate = true;
+        }
+      }
+
+      const renderStartMs = performance.now();
       this.renderer.render(this.scene, this.camera);
+      const frameRenderMs = Math.max(0.5, rawDt * 1000);
+      this.emaFrameMs = this.emaFrameMs * 0.92 + Math.min(80, Math.max(frameRenderMs, performance.now() - renderStartMs)) * 0.08;
+
+      if (!this.isSoftwareGl && this.screenState === 'playing' && now - this.lastPerfEvalMs > 1800) {
+        this.lastPerfEvalMs = now;
+        const nextPerf = computeAdaptivePerfStep({
+          tier: this.perfSettings.tier,
+          avgFrameMs: this.emaFrameMs,
+          minTier: this.isLowPerfDevice ? 1 : 0,
+          maxTier: 3,
+        });
+        if (nextPerf.tier !== this.perfSettings.tier) {
+          const prevClearcoat = this.perfSettings.disableClearcoat;
+          this.perfSettings = nextPerf;
+          const w = this.container.clientWidth || window.innerWidth;
+          const h = this.container.clientHeight || window.innerHeight;
+          this.renderer.setPixelRatio(
+            Math.min(window.devicePixelRatio, 2) * nextPerf.renderScale
+          );
+          this.renderer.setSize(w, h, false);
+          if (prevClearcoat !== nextPerf.disableClearcoat) {
+            this.rebuildWeaponMesh();
+          }
+        }
+      }
+
       scheduleNext(tick);
     };
 
@@ -2935,6 +3219,12 @@ export class ArenaEngine {
         easterEggFound: this.easterEggTriggered,
         durationSec: this.matchDuration,
         leaderboard,
+        weaponStats: {
+          pulse_carbine: { ...this.weaponMatchStats.pulse_carbine },
+          volt_scatter: { ...this.weaponMatchStats.volt_scatter },
+          helios_rail: { ...this.weaponMatchStats.helios_rail },
+          arc_repeater: { ...this.weaponMatchStats.arc_repeater },
+        },
       },
       this.shotsFired,
       this.shotsHit
@@ -3044,6 +3334,7 @@ export class ArenaEngine {
     for (const peer of this.peerMeshes.values()) {
       disposeAvatarRig(peer.rig);
     }
+    this.clearMapScene();
     Object.values(this.projectileGeos).forEach((g) => g.dispose());
     Object.values(this.projectileMats).forEach((m) => m.dispose());
     this.shadowTex.dispose();

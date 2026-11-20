@@ -25,8 +25,10 @@ import {
   applyTutorialCompletion,
   claimBattlePassTier,
   mergeLocalAndCloudProfiles,
+  normalizeWeaponStats,
   pickRandomMapId,
   purchaseStoreItem,
+  syncBattlePassSeason,
   upgradeBattlePassPremium,
 } from './game/rules';
 import {
@@ -106,13 +108,18 @@ const STORAGE_TOKEN_KEY = 'prism_protocol_token_v1';
 const STORAGE_PENDING_SYNC_KEY = 'prism_protocol_pending_sync_v1';
 
 function normalizeProfile(raw: PlayerCloudProfile): PlayerCloudProfile {
-  return {
+  const normalizedBase: PlayerCloudProfile = {
     ...raw,
+    stats: {
+      ...raw.stats,
+      weaponStats: normalizeWeaponStats(raw.stats?.weaponStats),
+    },
     settings: {
       ...DEFAULT_SETTINGS,
       ...(raw.settings ?? {}),
     },
   };
+  return syncBattlePassSeason(normalizedBase).profile;
 }
 
 function readLocalProfile(): PlayerCloudProfile | null {
@@ -332,8 +339,10 @@ export default function App() {
               hasPendingLocal ||
               merged.xp !== cloudProfile.xp ||
               merged.credits !== cloudProfile.credits ||
+              merged.passSeasonNumber !== cloudProfile.passSeasonNumber ||
               merged.tutorialCompleted !== cloudProfile.tutorialCompleted ||
               merged.stats.matchesPlayed !== cloudProfile.stats.matchesPlayed ||
+              merged.stats.shotsFired !== cloudProfile.stats.shotsFired ||
               merged.unlockedWeaponSkins.length !== cloudProfile.unlockedWeaponSkins.length ||
               merged.unlockedAvatarSkins.length !== cloudProfile.unlockedAvatarSkins.length;
 
@@ -774,8 +783,10 @@ export default function App() {
       if (
         merged.xp !== cloudProfile.xp ||
         merged.credits !== cloudProfile.credits ||
+        merged.passSeasonNumber !== cloudProfile.passSeasonNumber ||
         merged.tutorialCompleted !== cloudProfile.tutorialCompleted ||
         merged.stats.matchesPlayed !== cloudProfile.stats.matchesPlayed ||
+        merged.stats.shotsFired !== cloudProfile.stats.shotsFired ||
         merged.unlockedWeaponSkins.length !== cloudProfile.unlockedWeaponSkins.length ||
         merged.unlockedAvatarSkins.length !== cloudProfile.unlockedAvatarSkins.length
       ) {
@@ -1196,6 +1207,14 @@ export default function App() {
                         if (!res.ok) return prev;
                         syncCloudSave(res.profile);
                         return res.profile;
+                      });
+                    }}
+                    onSeasonReset={() => {
+                      setProfile((prev) => {
+                        const synced = syncBattlePassSeason(prev);
+                        if (!synced.resetTriggered) return prev;
+                        void syncCloudSave(synced.profile);
+                        return synced.profile;
                       });
                     }}
                   />

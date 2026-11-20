@@ -94,11 +94,13 @@ export function disposeAvatarRig(rig: AnimatedAvatarRig) {
 export function buildWeaponViewModel(
   weaponId: WeaponId,
   skin: WeaponSkinDef,
-  avatarSkin?: AvatarSkinDef
+  avatarSkin?: AvatarSkinDef,
+  options?: { disableClearcoat?: boolean }
 ): THREE.Group {
   const group = new THREE.Group();
   const pbr = createWeaponPBRTextures(skin);
   const knurl = createGripKnurlTextures();
+  const clearcoatMult = options?.disableClearcoat ? 0 : 1;
   const isClearcoat =
     skin.pattern === 'rainbow' ||
     skin.pattern === 'prism_holo' ||
@@ -113,7 +115,7 @@ export function buildWeaponViewModel(
     roughnessMap: pbr.roughnessMap,
     metalness: skin.metalness,
     roughness: skin.roughness,
-    clearcoat: isClearcoat ? 0.88 : 0.28,
+    clearcoat: (isClearcoat ? 0.88 : 0.28) * clearcoatMult,
     clearcoatRoughness: skin.pattern === 'rainbow' || skin.pattern === 'prism_holo' ? 0.08 : 0.18,
     reflectivity: 0.92,
   });
@@ -123,7 +125,7 @@ export function buildWeaponViewModel(
     bumpScale: 0.006,
     metalness: Math.min(0.98, skin.metalness + 0.12),
     roughness: Math.max(0.12, skin.roughness - 0.08),
-    clearcoat: isClearcoat ? 0.65 : 0.2,
+    clearcoat: (isClearcoat ? 0.65 : 0.2) * clearcoatMult,
     clearcoatRoughness: 0.15,
   });
   const coreMat = new THREE.MeshStandardMaterial({
@@ -145,7 +147,7 @@ export function buildWeaponViewModel(
     roughnessMap: woodPbr?.roughnessMap ?? knurl.roughnessMap,
     roughness: isWoodGrip ? 0.44 : 0.78,
     metalness: isWoodGrip ? 0.05 : 0.12,
-    clearcoat: isWoodGrip ? 0.68 : 0.08,
+    clearcoat: (isWoodGrip ? 0.68 : 0.08) * clearcoatMult,
     clearcoatRoughness: 0.22,
   });
 
@@ -156,7 +158,7 @@ export function buildWeaponViewModel(
     bumpScale: isWoodGrip ? 0.01 : 0,
     roughness: isWoodGrip ? 0.36 : 0.24,
     metalness: isWoodGrip ? 0.22 : 0.82,
-    clearcoat: 0.75,
+    clearcoat: 0.75 * clearcoatMult,
     clearcoatRoughness: 0.12,
   });
 
@@ -166,9 +168,29 @@ export function buildWeaponViewModel(
     emissiveIntensity: 0.75,
     metalness: 0.15,
     roughness: 0.06,
-    clearcoat: 1.0,
+    clearcoat: 1.0 * clearcoatMult,
     clearcoatRoughness: 0.04,
     reflectivity: 1.0,
+  });
+
+  const gunmetalMat = new THREE.MeshStandardMaterial({
+    color: 0x202630,
+    bumpMap: knurl.bumpMap,
+    bumpScale: 0.005,
+    metalness: 0.84,
+    roughness: 0.34,
+  });
+  const boltSteelMat = new THREE.MeshStandardMaterial({
+    color: 0x9aa4b2,
+    metalness: 0.92,
+    roughness: 0.2,
+  });
+  const ventGlowMat = new THREE.MeshStandardMaterial({
+    color: skin.emissiveColor,
+    emissive: skin.emissiveColor,
+    emissiveIntensity: 0.85,
+    roughness: 0.22,
+    metalness: 0.35,
   });
 
   if (weaponId === 'helios_rail') {
@@ -270,82 +292,309 @@ export function buildWeaponViewModel(
     grip.rotation.x = 0.24;
     group.add(grip);
   } else if (weaponId === 'arc_repeater') {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.125, 0.4), bodyMat);
-    group.add(body);
+    // Realistic Compact Tactical PDW / MPX-style SMG
+    const upperReceiver = new THREE.Mesh(new THREE.BoxGeometry(0.088, 0.068, 0.36), bodyMat);
+    upperReceiver.position.set(0, 0.022, -0.02);
+    group.add(upperReceiver);
 
-    const shroud = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.075, 0.26), trimMat);
-    shroud.position.set(0, 0.01, -0.24);
-    group.add(shroud);
+    const lowerReceiver = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.052, 0.24), gunmetalMat);
+    lowerReceiver.position.set(0, -0.032, 0.02);
+    group.add(lowerReceiver);
 
-    const muzzleTip = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.028, 0.08, 12), trimMat);
-    muzzleTip.rotation.x = Math.PI / 2;
-    muzzleTip.position.set(0, 0.01, -0.4);
-    group.add(muzzleTip);
+    // Ejection port recess + machined brushed-steel bolt carrier on right side
+    const ejectPort = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.028, 0.072), gunmetalMat);
+    ejectPort.position.set(0.04, 0.026, -0.02);
+    group.add(ejectPort);
 
-    const arcStripL = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.025, 0.34), coreMat);
-    arcStripL.position.set(-0.056, 0.02, -0.08);
-    group.add(arcStripL);
+    const boltCarrier = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.022, 0.062), boltSteelMat);
+    boltCarrier.position.set(0.043, 0.026, -0.02);
+    group.add(boltCarrier);
 
-    const arcStripR = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.025, 0.34), coreMat);
-    arcStripR.position.set(0.056, 0.02, -0.08);
-    group.add(arcStripR);
+    // Left-side folding charging handle
+    const chargeKnob = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.014, 0.024), gunmetalMat);
+    chargeKnob.position.set(-0.054, 0.028, -0.14);
+    group.add(chargeKnob);
 
-    const reflex = new THREE.Mesh(new THREE.TorusGeometry(0.028, 0.007, 8, 16), scopeMat);
-    reflex.position.set(0, 0.095, -0.02);
-    group.add(reflex);
+    // Slotted top Picatinny rail
+    const topRailBase = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.01, 0.33), gunmetalMat);
+    topRailBase.position.set(0, 0.061, -0.04);
+    group.add(topRailBase);
+    for (let rz = -0.19; rz <= 0.11; rz += 0.032) {
+      const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.008, 0.016), trimMat);
+      tooth.position.set(0, 0.069, rz);
+      group.add(tooth);
+    }
 
-    const reflexLens = new THREE.Mesh(new THREE.CircleGeometry(0.023, 14), opticGlassMat);
-    reflexLens.position.set(0, 0.095, -0.02);
+    // Perforated ventilated M-LOK shroud & barrel sleeve
+    const handguard = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.062, 0.19), bodyMat);
+    handguard.position.set(0, 0.018, -0.25);
+    group.add(handguard);
+
+    for (let vz = -0.31; vz <= -0.19; vz += 0.04) {
+      const slotL = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.016, 0.024), gunmetalMat);
+      slotL.position.set(-0.038, 0.018, vz);
+      group.add(slotL);
+      const slotR = slotL.clone();
+      slotR.position.x = 0.038;
+      group.add(slotR);
+    }
+    const ventL = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.007, 0.12), ventGlowMat);
+    ventL.position.set(-0.038, 0.033, -0.25);
+    group.add(ventL);
+    const ventR = ventL.clone();
+    ventR.position.x = 0.038;
+    group.add(ventR);
+
+    // Right-rail compact tactical laser / illuminator module
+    const peqBody = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.026, 0.075), gunmetalMat);
+    peqBody.position.set(0.049, 0.02, -0.24);
+    group.add(peqBody);
+    const peqEmitter = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.012, 8), ventGlowMat);
+    peqEmitter.rotation.x = Math.PI / 2;
+    peqEmitter.position.set(0.051, 0.022, -0.281);
+    group.add(peqEmitter);
+
+    // Exposed steel barrel collar + ribbed cylindrical tactical suppressor
+    const innerBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.014, 0.06, 12), boltSteelMat);
+    innerBarrel.rotation.x = Math.PI / 2;
+    innerBarrel.position.set(0, 0.016, -0.355);
+    group.add(innerBarrel);
+
+    const suppressor = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.023, 0.15, 16), gunmetalMat);
+    suppressor.rotation.x = Math.PI / 2;
+    suppressor.position.set(0, 0.016, -0.445);
+    group.add(suppressor);
+
+    for (const sz of [-0.39, -0.43, -0.47, -0.505]) {
+      const rib = new THREE.Mesh(new THREE.TorusGeometry(0.0225, 0.003, 6, 16), trimMat);
+      rib.position.set(0, 0.016, sz);
+      group.add(rib);
+    }
+
+    // Skeletonized riser + enclosed micro red-dot reflex optic
+    const riser = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.018, 0.056), gunmetalMat);
+    riser.position.set(0, 0.08, -0.02);
+    group.add(riser);
+
+    const opticBody = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.068, 14), scopeMat);
+    opticBody.rotation.x = Math.PI / 2;
+    opticBody.position.set(0, 0.105, -0.02);
+    group.add(opticBody);
+
+    const opticHood = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.034, 0.044), gunmetalMat);
+    opticHood.position.set(0, 0.105, -0.02);
+    group.add(opticHood);
+
+    const reflexLens = new THREE.Mesh(new THREE.CircleGeometry(0.018, 14), opticGlassMat);
+    reflexLens.position.set(0, 0.105, 0.016);
     group.add(reflexLens);
 
-    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.18, 0.065), gripMat);
-    mag.position.set(0, -0.14, -0.06);
-    mag.rotation.x = -0.18;
+    // Flared magwell + 35-rd extended ribbed stick magazine
+    const magwell = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.036, 0.068), gunmetalMat);
+    magwell.position.set(0, -0.062, -0.055);
+    group.add(magwell);
+
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.17, 0.048), gripMat);
+    mag.position.set(0, -0.145, -0.072);
+    mag.rotation.x = -0.16;
     group.add(mag);
-  } else {
-    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.115, 0.13, 0.52), bodyMat);
-    group.add(receiver);
+    for (const my of [-0.11, -0.15, -0.19]) {
+      const magRib = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.01, 0.052), gunmetalMat);
+      magRib.position.set(0, my, -0.068 - (my + 0.145) * 0.16);
+      magRib.rotation.x = -0.16;
+      group.add(magRib);
+    }
 
-    // Top picatinny tactical rail
-    const railBar = new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.018, 0.44), trimMat);
-    railBar.position.set(0, 0.072, -0.04);
-    group.add(railBar);
-
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.03, 0.44, 14), trimMat);
-    barrel.rotation.x = Math.PI / 2;
-    barrel.position.set(0, 0.015, -0.35);
-    group.add(barrel);
-
-    const muzzleRing = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.008, 8, 16), coreMat);
-    muzzleRing.position.set(0, 0.015, -0.55);
-    group.add(muzzleRing);
-
-    const coreTube = new THREE.Mesh(new THREE.BoxGeometry(0.125, 0.03, 0.28), coreMat);
-    coreTube.position.set(0, 0.03, -0.08);
-    group.add(coreTube);
-
-    const scopeBody = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.026, 0.18, 12), scopeMat);
-    scopeBody.rotation.x = Math.PI / 2;
-    scopeBody.position.set(0, 0.105, -0.02);
-    group.add(scopeBody);
-
-    const scopeLens = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.014, 12), opticGlassMat);
-    scopeLens.rotation.x = Math.PI / 2;
-    scopeLens.position.set(0, 0.105, 0.07);
-    group.add(scopeLens);
-
-    const triggerGuard = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.045, 0.072), trimMat);
-    triggerGuard.position.set(0, -0.084, 0.06);
+    // Trigger guard, curved trigger, angled handstop, stippled grip & collapsible dual-rod PDW wire stock
+    const triggerGuard = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.036, 0.062), gunmetalMat);
+    triggerGuard.position.set(0, -0.068, 0.03);
     group.add(triggerGuard);
 
-    const foregrip = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.11, 0.075), gripMat);
-    foregrip.position.set(0, -0.1, -0.18);
+    const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.024, 0.012), boltSteelMat);
+    trigger.position.set(0, -0.062, 0.032);
+    trigger.rotation.x = 0.25;
+    group.add(trigger);
+
+    const handStop = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.045, 0.048), gripMat);
+    handStop.position.set(0, -0.036, -0.24);
+    handStop.rotation.x = -0.25;
+    group.add(handStop);
+
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.135, 0.076), gripMat);
+    grip.position.set(0, -0.105, 0.11);
+    grip.rotation.x = 0.24;
+    group.add(grip);
+
+    for (const sx of [-0.03, 0.03]) {
+      const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.17, 8), boltSteelMat);
+      rod.rotation.x = Math.PI / 2;
+      rod.position.set(sx, 0.015, 0.24);
+      group.add(rod);
+    }
+    const wireButtplate = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.1, 0.024), gunmetalMat);
+    wireButtplate.position.set(0, -0.005, 0.325);
+    group.add(wireButtplate);
+  } else {
+    // Realistic Tactical M416 / SCAR-inspired Assault Rifle (Pulse Carbine)
+    const upperReceiver = new THREE.Mesh(new THREE.BoxGeometry(0.096, 0.072, 0.42), bodyMat);
+    upperReceiver.position.set(0, 0.022, -0.01);
+    group.add(upperReceiver);
+
+    const lowerReceiver = new THREE.Mesh(new THREE.BoxGeometry(0.088, 0.056, 0.29), gunmetalMat);
+    lowerReceiver.position.set(0, -0.036, 0.035);
+    group.add(lowerReceiver);
+
+    // Ejection port, brushed-steel bolt carrier & brass deflector on right side
+    const ejectPort = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.03, 0.082), gunmetalMat);
+    ejectPort.position.set(0.044, 0.026, -0.01);
+    group.add(ejectPort);
+
+    const boltPlate = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.024, 0.07), boltSteelMat);
+    boltPlate.position.set(0.047, 0.026, -0.01);
+    group.add(boltPlate);
+
+    const brassDeflector = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.03, 0.024), trimMat);
+    brassDeflector.position.set(0.052, 0.026, 0.044);
+    brassDeflector.rotation.y = 0.35;
+    group.add(brassDeflector);
+
+    // Rear T-handle charging latch & fire selector switch
+    const chargingHandle = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.016, 0.022), gunmetalMat);
+    chargingHandle.position.set(0, 0.048, 0.198);
+    group.add(chargingHandle);
+
+    const selectorSwitch = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, 0.034), boltSteelMat);
+    selectorSwitch.position.set(-0.048, -0.022, 0.115);
+    selectorSwitch.rotation.x = -0.35;
+    group.add(selectorSwitch);
+
+    // Full-length slotted top Picatinny rail
+    const railBase = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.01, 0.56), gunmetalMat);
+    railBase.position.set(0, 0.063, -0.1);
+    group.add(railBase);
+    for (let rz = -0.36; rz <= 0.16; rz += 0.036) {
+      const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.008, 0.018), trimMat);
+      tooth.position.set(0, 0.071, rz);
+      group.add(tooth);
+    }
+
+    // Ventilated octagonal M-LOK / Quad-Rail handguard + recessed heat vents
+    const handguard = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.074, 0.25), bodyMat);
+    handguard.position.set(0, 0.018, -0.29);
+    group.add(handguard);
+
+    const handguardBottom = new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.014, 0.24), gunmetalMat);
+    handguardBottom.position.set(0, -0.024, -0.29);
+    group.add(handguardBottom);
+
+    for (let hz = -0.38; hz <= -0.2; hz += 0.042) {
+      const ventCutL = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.02, 0.024), gunmetalMat);
+      ventCutL.position.set(-0.042, 0.016, hz);
+      group.add(ventCutL);
+      const ventCutR = ventCutL.clone();
+      ventCutR.position.x = 0.042;
+      group.add(ventCutR);
+    }
+    const ventGlowL = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.007, 0.17), ventGlowMat);
+    ventGlowL.position.set(-0.042, 0.034, -0.29);
+    group.add(ventGlowL);
+    const ventGlowR = ventGlowL.clone();
+    ventGlowR.position.x = 0.042;
+    group.add(ventGlowR);
+
+    // Gas block + heavy cold-hammer-forged steel barrel + 3-prong flash suppressor
+    const gasBlock = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.052, 0.038), gunmetalMat);
+    gasBlock.position.set(0, 0.022, -0.43);
+    group.add(gasBlock);
+
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.019, 0.24, 14), boltSteelMat);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, 0.018, -0.5);
+    group.add(barrel);
+
+    const flashHiderBase = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.022, 0.055, 12), gunmetalMat);
+    flashHiderBase.rotation.x = Math.PI / 2;
+    flashHiderBase.position.set(0, 0.018, -0.625);
+    group.add(flashHiderBase);
+    for (let i = 0; i < 3; i++) {
+      const ang = (i / 3) * Math.PI * 2;
+      const prong = new THREE.Mesh(new THREE.BoxGeometry(0.007, 0.007, 0.042), gunmetalMat);
+      prong.position.set(Math.cos(ang) * 0.015, 0.018 + Math.sin(ang) * 0.015, -0.66);
+      group.add(prong);
+    }
+
+    // Tactical Holographic Reflex Sight + windage turret + coated lens
+    const opticMount = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.016, 0.095), gunmetalMat);
+    opticMount.position.set(0, 0.082, -0.02);
+    group.add(opticMount);
+
+    const opticHoodTop = new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.01, 0.085), scopeMat);
+    opticHoodTop.position.set(0, 0.132, -0.02);
+    group.add(opticHoodTop);
+
+    const opticWallL = new THREE.Mesh(new THREE.BoxGeometry(0.009, 0.044, 0.082), scopeMat);
+    opticWallL.position.set(-0.023, 0.109, -0.02);
+    group.add(opticWallL);
+    const opticWallR = opticWallL.clone();
+    opticWallR.position.x = 0.023;
+    group.add(opticWallR);
+
+    const windageKnob = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.014, 10), trimMat);
+    windageKnob.rotation.z = Math.PI / 2;
+    windageKnob.position.set(0.032, 0.106, -0.015);
+    group.add(windageKnob);
+
+    const scopeLens = new THREE.Mesh(new THREE.PlaneGeometry(0.034, 0.028), opticGlassMat);
+    scopeLens.position.set(0, 0.11, 0.02);
+    group.add(scopeLens);
+
+    // Flared magwell + curved ribbed 30-rd STANAG magazine
+    const magwell = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.04, 0.092), gunmetalMat);
+    magwell.position.set(0, -0.068, -0.045);
+    group.add(magwell);
+
+    const magUpper = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.085, 0.072), gripMat);
+    magUpper.position.set(0, -0.112, -0.042);
+    magUpper.rotation.x = 0.08;
+    group.add(magUpper);
+
+    const magLower = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.095, 0.07), gripMat);
+    magLower.position.set(0, -0.19, -0.022);
+    magLower.rotation.x = 0.24;
+    group.add(magLower);
+
+    // Trigger guard, curved trigger, angled tactical foregrip, pistol grip & collapsible carbine stock
+    const triggerGuard = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.042, 0.07), gunmetalMat);
+    triggerGuard.position.set(0, -0.076, 0.056);
+    group.add(triggerGuard);
+
+    const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.026, 0.012), boltSteelMat);
+    trigger.position.set(0, -0.068, 0.058);
+    trigger.rotation.x = 0.28;
+    group.add(trigger);
+
+    const foregrip = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.105, 0.056), gripMat);
+    foregrip.position.set(0, -0.085, -0.2);
+    foregrip.rotation.x = -0.14;
     group.add(foregrip);
 
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.15, 0.09), gripMat);
-    grip.position.set(0, -0.12, 0.14);
-    grip.rotation.x = 0.25;
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.145, 0.082), gripMat);
+    grip.position.set(0, -0.115, 0.14);
+    grip.rotation.x = 0.26;
     group.add(grip);
+
+    const bufferTube = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.16, 12), gunmetalMat);
+    bufferTube.rotation.x = Math.PI / 2;
+    bufferTube.position.set(0, 0.018, 0.265);
+    group.add(bufferTube);
+
+    const stockCheek = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.095, 0.125), bodyMat);
+    stockCheek.position.set(0, -0.006, 0.305);
+    group.add(stockCheek);
+
+    const buttPad = new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.11, 0.022), gunmetalMat);
+    buttPad.position.set(0, -0.014, 0.372);
+    group.add(buttPad);
   }
 
   // First-person Tactical Gloved Hands & Cordura Forearm Sleeves holding the weapon
@@ -442,36 +691,54 @@ export function buildWeaponViewModel(
     weaponId === 'volt_scatter'
       ? new THREE.Vector3(-0.015, -0.055, -0.22)
       : weaponId === 'arc_repeater'
-      ? new THREE.Vector3(-0.015, -0.065, -0.14)
+      ? new THREE.Vector3(-0.012, -0.046, -0.215)
+      : weaponId === 'pulse_carbine'
+      ? new THREE.Vector3(-0.012, -0.078, -0.2)
       : new THREE.Vector3(-0.015, -0.065, -0.17);
 
-  const leftPalm = new THREE.Mesh(new THREE.BoxGeometry(0.098 * armSlim, 0.076, 0.115), gloveMat);
-  leftPalm.position.set(leftSupportPos.x - 0.012, leftSupportPos.y, leftSupportPos.z);
+  const leftPalm = new THREE.Mesh(new THREE.BoxGeometry(0.092 * armSlim, 0.072, 0.105), gloveMat);
+  leftPalm.position.set(leftSupportPos.x - 0.008, leftSupportPos.y, leftSupportPos.z);
   group.add(leftPalm);
 
-  const leftKnuckles = new THREE.Mesh(new THREE.BoxGeometry(0.102 * armSlim, 0.03, 0.072), cuffMat);
-  leftKnuckles.position.set(leftSupportPos.x - 0.028, leftSupportPos.y - 0.015, leftSupportPos.z);
+  const leftKnuckles = new THREE.Mesh(new THREE.BoxGeometry(0.096 * armSlim, 0.028, 0.068), cuffMat);
+  leftKnuckles.position.set(leftSupportPos.x - 0.024, leftSupportPos.y - 0.014, leftSupportPos.z);
   group.add(leftKnuckles);
 
-  const leftThumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.016, 0.05, 4, 8), gloveMat);
-  leftThumb.position.set(leftSupportPos.x - 0.056, leftSupportPos.y + 0.04, leftSupportPos.z - 0.018);
+  const leftThumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.015, 0.048, 4, 8), gloveMat);
+  leftThumb.position.set(leftSupportPos.x - 0.05, leftSupportPos.y + 0.036, leftSupportPos.z - 0.016);
   leftThumb.rotation.x = Math.PI / 2.2;
   group.add(leftThumb);
 
+  const wristAnchor = new THREE.Vector3(
+    leftSupportPos.x - 0.026,
+    leftSupportPos.y - 0.01,
+    leftSupportPos.z + 0.045
+  );
+  const elbowAnchor = new THREE.Vector3(
+    leftSupportPos.x - 0.31,
+    leftSupportPos.y - 0.23,
+    leftSupportPos.z + 0.42
+  );
+  const forearmDir = wristAnchor.clone().sub(elbowAnchor);
+  const forearmLen = forearmDir.length();
+  const forearmAxis = forearmDir.clone().normalize();
+  const upAxis = new THREE.Vector3(0, 1, 0);
+
   const leftCuff = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.046 * armSlim, 0.052 * armSlim, 0.08, 12),
+    new THREE.CylinderGeometry(0.044 * armSlim, 0.05 * armSlim, 0.085, 12),
     cuffMat
   );
-  leftCuff.position.set(leftSupportPos.x - 0.095, leftSupportPos.y - 0.052, leftSupportPos.z + 0.095);
-  leftCuff.rotation.set(1.08, 0.35, 0.44);
+  leftCuff.position.copy(wristAnchor).addScaledVector(forearmAxis, -0.038);
+  leftCuff.quaternion.setFromUnitVectors(upAxis, forearmAxis);
   group.add(leftCuff);
 
+  const sleeveLen = Math.max(0.28, forearmLen - 0.06);
   const leftForearm = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.052 * armSlim, 0.072 * armSlim, 0.44, 12),
+    new THREE.CylinderGeometry(0.05 * armSlim, 0.072 * armSlim, sleeveLen, 12),
     sleeveMat
   );
-  leftForearm.position.set(leftSupportPos.x - 0.225, leftSupportPos.y - 0.15, leftSupportPos.z + 0.25);
-  leftForearm.rotation.set(1.08, 0.38, 0.5);
+  leftForearm.position.copy(wristAnchor).addScaledVector(forearmAxis, -(0.06 + sleeveLen * 0.5));
+  leftForearm.quaternion.setFromUnitVectors(upAxis, forearmAxis);
   group.add(leftForearm);
 
   return group;
@@ -899,34 +1166,71 @@ export function buildAvatarRig(
   addOutlineShell(armR, sleeveR);
 
   // Third-person weapon prop shaped to match weaponId
-  const propLength =
-    weaponId === 'helios_rail'
-      ? 0.95
-      : weaponId === 'volt_scatter'
-      ? 0.58
-      : weaponId === 'arc_repeater'
-      ? 0.42
-      : 0.62;
-  const propWidth = weaponId === 'volt_scatter' ? 0.12 : 0.085;
-  const rifle = new THREE.Mesh(
-    new THREE.BoxGeometry(propWidth, 0.11, propLength),
-    armorMat
-  );
-  rifle.position.set(-0.04, -0.32, 0.24 + propLength * 0.35);
-  armR.add(rifle);
+  if (weaponId === 'helios_rail' || weaponId === 'volt_scatter') {
+    const propLength = weaponId === 'helios_rail' ? 0.95 : 0.58;
+    const propWidth = weaponId === 'volt_scatter' ? 0.12 : 0.085;
+    const rifle = new THREE.Mesh(
+      new THREE.BoxGeometry(propWidth, 0.11, propLength),
+      armorMat
+    );
+    rifle.position.set(-0.04, -0.32, 0.24 + propLength * 0.35);
+    armR.add(rifle);
 
-  const rifleCore = new THREE.Mesh(
-    new THREE.BoxGeometry(propWidth + 0.01, 0.03, propLength * 0.48),
-    visorMat
-  );
-  rifleCore.position.set(-0.04, -0.295, 0.26 + propLength * 0.36);
-  armR.add(rifleCore);
+    const rifleCore = new THREE.Mesh(
+      new THREE.BoxGeometry(propWidth + 0.01, 0.03, propLength * 0.48),
+      visorMat
+    );
+    rifleCore.position.set(-0.04, -0.295, 0.26 + propLength * 0.36);
+    armR.add(rifleCore);
 
-  if (weaponId === 'helios_rail') {
-    const scopeMount = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.03, 0.24, 10), trimMat);
-    scopeMount.rotation.x = Math.PI / 2;
-    scopeMount.position.set(-0.04, -0.22, 0.52);
-    armR.add(scopeMount);
+    if (weaponId === 'helios_rail') {
+      const scopeMount = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.03, 0.24, 10), trimMat);
+      scopeMount.rotation.x = Math.PI / 2;
+      scopeMount.position.set(-0.04, -0.22, 0.52);
+      armR.add(scopeMount);
+    }
+  } else if (weaponId === 'arc_repeater') {
+    const gunMat = new THREE.MeshStandardMaterial({ color: 0x1e242d, metalness: 0.82, roughness: 0.34 });
+    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.09, 0.32), armorMat);
+    receiver.position.set(-0.04, -0.31, 0.38);
+    armR.add(receiver);
+
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.022, 0.22, 10), gunMat);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(-0.04, -0.3, 0.62);
+    armR.add(barrel);
+
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.16, 0.045), gunMat);
+    mag.position.set(-0.04, -0.41, 0.46);
+    mag.rotation.x = 0.18;
+    armR.add(mag);
+
+    const microOptic = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.038, 0.065), trimMat);
+    microOptic.position.set(-0.04, -0.245, 0.4);
+    armR.add(microOptic);
+  } else {
+    const gunMat = new THREE.MeshStandardMaterial({ color: 0x1e242d, metalness: 0.84, roughness: 0.32 });
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.1, 0.18), gunMat);
+    stock.position.set(-0.04, -0.32, 0.22);
+    armR.add(stock);
+
+    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.078, 0.1, 0.42), armorMat);
+    receiver.position.set(-0.04, -0.31, 0.46);
+    armR.add(receiver);
+
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.32, 10), gunMat);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(-0.04, -0.3, 0.78);
+    armR.add(barrel);
+
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.15, 0.062), gunMat);
+    mag.position.set(-0.04, -0.41, 0.49);
+    mag.rotation.x = -0.18;
+    armR.add(mag);
+
+    const holoOptic = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.044, 0.082), trimMat);
+    holoOptic.position.set(-0.04, -0.24, 0.45);
+    armR.add(holoOptic);
   }
   torso.add(armR);
 
@@ -1402,12 +1706,12 @@ export function buildHouseStructure(
     metalness: 0.5,
   });
   const doorW = Math.min(1.4, obs.w * 0.24);
-  const doorH = Math.min(2.05, wallH * 0.68);
+  const doorH = Math.max(0.5, Math.min(2.05, wallH * 0.68) - 0.02);
   const door = new THREE.Mesh(
     new THREE.BoxGeometry(doorW, doorH, obs.d + 0.12),
     doorMat
   );
-  door.position.y = plinthH + doorH * 0.5;
+  door.position.y = plinthH + 0.015 + doorH * 0.5;
   group.add(door);
 
   return group;
@@ -1447,17 +1751,17 @@ export function buildTexturedCrate(
   body.receiveShadow = true;
   group.add(body);
 
-  // Corner steel posts protruding slightly beyond crate walls (no coplanar faces)
+  // Corner steel posts stopping cleanly at bodyH (zero coplanar faces with topTrim or body sides)
   const postW = Math.min(0.22, Math.min(obs.w, obs.d) * 0.12);
   const corners: Array<[number, number]> = [
-    [-obs.w * 0.5, -obs.d * 0.5],
-    [obs.w * 0.5, -obs.d * 0.5],
-    [-obs.w * 0.5, obs.d * 0.5],
-    [obs.w * 0.5, obs.d * 0.5],
+    [-obs.w * 0.5 - 0.004, -obs.d * 0.5 - 0.004],
+    [obs.w * 0.5 + 0.004, -obs.d * 0.5 - 0.004],
+    [-obs.w * 0.5 - 0.004, obs.d * 0.5 + 0.004],
+    [obs.w * 0.5 + 0.004, obs.d * 0.5 + 0.004],
   ];
   for (const [cx, cz] of corners) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(postW, obs.h, postW), frameMat);
-    post.position.set(cx, obs.h * 0.5, cz);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(postW, bodyH, postW), frameMat);
+    post.position.set(cx, bodyH * 0.5, cz);
     group.add(post);
   }
 
@@ -1617,12 +1921,13 @@ export function buildHealOrbModel(): {
   return { group, core, ring };
 }
 
-function applyWorldBoxUVs(
+export function applyWorldBoxUVs(
   geo: THREE.BoxGeometry,
   w: number,
   h: number,
   d: number,
-  tileMeters = 4
+  tileU = 4,
+  tileV = tileU
 ) {
   const uv = geo.attributes.uv;
   const norm = geo.attributes.normal;
@@ -1633,11 +1938,11 @@ function applyWorldBoxUVs(
     const u = uv.getX(i);
     const v = uv.getY(i);
     if (nx > 0.5) {
-      uv.setXY(i, (u * d) / tileMeters, (v * h) / tileMeters);
+      uv.setXY(i, (u * d) / tileU, (v * h) / tileV);
     } else if (ny > 0.5) {
-      uv.setXY(i, (u * w) / tileMeters, (v * d) / tileMeters);
+      uv.setXY(i, (u * w) / tileU, (v * d) / tileU);
     } else {
-      uv.setXY(i, (u * w) / tileMeters, (v * h) / tileMeters);
+      uv.setXY(i, (u * w) / tileU, (v * h) / tileV);
     }
   }
   uv.needsUpdate = true;
@@ -1673,9 +1978,10 @@ export function buildWoodenCrate(
     metalness: 0.55,
   });
 
-  // Main wooden crate body (single clean tiled crate panel per face for smaller crates, scaled cleanly for large ones)
+  // Main wooden crate body (single clean tiled crate panel per face)
   const tileM = Math.max(1.2, Math.min(obs.w, obs.d, obs.h));
-  const bodyH = Math.max(0.2, obs.h - 0.04);
+  const lidH = 0.04;
+  const bodyH = Math.max(0.2, obs.h - lidH);
   const bodyGeo = new THREE.BoxGeometry(obs.w, bodyH, obs.d);
   if (obs.w > 2.4 || obs.d > 2.4) {
     applyWorldBoxUVs(bodyGeo, obs.w, bodyH, obs.d, 1.9);
@@ -1686,43 +1992,39 @@ export function buildWoodenCrate(
   body.receiveShadow = true;
   group.add(body);
 
-  // Proud corner wooden posts (protruding slightly beyond crate body so zero z-fighting occurs)
+  // Proud corner wooden posts ending cleanly below lid (zero coplanar top faces)
   const postW = Math.min(0.16, Math.max(0.08, tileM * 0.1));
-  for (const [cx, cz] of [
-    [-obs.w * 0.5, -obs.d * 0.5],
-    [obs.w * 0.5, -obs.d * 0.5],
-    [-obs.w * 0.5, obs.d * 0.5],
-    [obs.w * 0.5, obs.d * 0.5],
-  ]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(postW, obs.h, postW), frameWoodMat);
-    post.position.set(cx, obs.h * 0.5, cz);
+  const corners: Array<[number, number]> = [
+    [-obs.w * 0.5 - 0.004, -obs.d * 0.5 - 0.004],
+    [obs.w * 0.5 + 0.004, -obs.d * 0.5 - 0.004],
+    [-obs.w * 0.5 - 0.004, obs.d * 0.5 + 0.004],
+    [obs.w * 0.5 + 0.004, obs.d * 0.5 + 0.004],
+  ];
+  for (const [cx, cz] of corners) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(postW, bodyH, postW), frameWoodMat);
+    post.position.set(cx, bodyH * 0.5, cz);
     post.castShadow = true;
     group.add(post);
   }
 
   // Timber lid frame stacked cleanly above bodyH
   const lid = new THREE.Mesh(
-    new THREE.BoxGeometry(obs.w + 0.04, 0.04, obs.d + 0.04),
+    new THREE.BoxGeometry(obs.w + 0.04, lidH, obs.d + 0.04),
     frameWoodMat
   );
-  lid.position.y = bodyH + 0.02;
+  lid.position.y = bodyH + lidH * 0.5;
   lid.castShadow = true;
   lid.receiveShadow = true;
   group.add(lid);
 
-  // Rusted iron corner brackets around top rim
-  const strapH = Math.min(0.1, obs.h * 0.14);
-  for (const [cx, cz] of [
-    [-obs.w * 0.5, -obs.d * 0.5],
-    [obs.w * 0.5, -obs.d * 0.5],
-    [-obs.w * 0.5, obs.d * 0.5],
-    [obs.w * 0.5, obs.d * 0.5],
-  ]) {
+  // Rusted iron corner brackets seated cleanly below lid (no coplanar edge with lid)
+  const strapH = Math.min(0.1, bodyH * 0.16);
+  for (const [cx, cz] of corners) {
     const bracket = new THREE.Mesh(
-      new THREE.BoxGeometry(postW + 0.03, strapH, postW + 0.03),
+      new THREE.BoxGeometry(postW + 0.025, strapH, postW + 0.025),
       ironMat
     );
-    bracket.position.set(cx, obs.h - strapH * 0.5, cz);
+    bracket.position.set(cx, bodyH - strapH * 0.5 - 0.005, cz);
     group.add(bracket);
   }
 
@@ -1816,21 +2118,25 @@ export function buildBuildingWall(
     metalness: 0.08,
   });
 
-  const geo = new THREE.BoxGeometry(obs.w, obs.h, obs.d);
-  applyWorldBoxUVs(geo, obs.w, obs.h, obs.d, 4.5);
+  const hasSill = obs.h <= 1.28;
+  const sillH = hasSill ? 0.06 : 0;
+  const wallH = Math.max(0.2, obs.h - sillH);
+
+  const geo = new THREE.BoxGeometry(obs.w, wallH, obs.d);
+  applyWorldBoxUVs(geo, obs.w, wallH, obs.d, 4.5);
   const wall = new THREE.Mesh(geo, wallMat);
-  wall.position.y = obs.h * 0.5;
+  wall.position.y = wallH * 0.5;
   wall.castShadow = true;
   wall.receiveShadow = true;
   group.add(wall);
 
-  // Subtle concrete window sill / base plinth for ground and upper-floor window sills
-  if (obs.h <= 1.28) {
+  // Concrete window sill stacked cleanly on top of wallH (zero coplanar faces)
+  if (hasSill) {
     const sill = new THREE.Mesh(
-      new THREE.BoxGeometry(obs.w + 0.14, 0.08, obs.d + 0.06),
+      new THREE.BoxGeometry(obs.w + 0.14, sillH, obs.d + 0.06),
       sillMat
     );
-    sill.position.y = obs.h - 0.04;
+    sill.position.y = wallH + sillH * 0.5;
     sill.castShadow = true;
     sill.receiveShadow = true;
     group.add(sill);
@@ -1936,19 +2242,23 @@ export function buildSandstoneWall(
     metalness: 0.05,
   });
 
-  const geo = new THREE.BoxGeometry(obs.w, obs.h, obs.d);
-  applyWorldBoxUVs(geo, obs.w, obs.h, obs.d, 4.5);
+  const copingH = Math.min(0.12, obs.h * 0.14);
+  const mainH = Math.max(0.2, obs.h - copingH);
+
+  const geo = new THREE.BoxGeometry(obs.w, mainH, obs.d);
+  // Keep vertical UV span >= mainH so bottom masonry plinth never wraps up tall walls
+  applyWorldBoxUVs(geo, obs.w, mainH, obs.d, 4.5, Math.max(4.5, mainH));
   const mesh = new THREE.Mesh(geo, wallMat);
-  mesh.position.y = obs.h * 0.5;
+  mesh.position.y = mainH * 0.5;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   group.add(mesh);
 
   const coping = new THREE.Mesh(
-    new THREE.BoxGeometry(obs.w + 0.14, 0.12, obs.d + 0.14),
+    new THREE.BoxGeometry(obs.w + 0.14, copingH, obs.d + 0.14),
     copingMat
   );
-  coping.position.y = obs.h - 0.05;
+  coping.position.y = mainH + copingH * 0.5;
   coping.castShadow = true;
   coping.receiveShadow = true;
   group.add(coping);
@@ -2118,38 +2428,40 @@ export function buildWoodenBoxPile(
     rotY?: number;
     dark?: boolean;
   }> = [
-    // Tier 1: Solid heavy base footprint (blocks sightlines & matches collision envelope cleanly)
-    { ox: -w * 0.25, oy: 0, oz: -d * 0.24, bw: w * 0.49, bh: h * 0.42, bd: d * 0.5 },
-    { ox: w * 0.24, oy: 0, oz: -d * 0.23, bw: w * 0.5, bh: h * 0.38, bd: d * 0.52, dark: true },
-    { ox: -w * 0.24, oy: 0, oz: d * 0.25, bw: w * 0.5, bh: h * 0.4, bd: d * 0.48, dark: true },
-    { ox: w * 0.25, oy: 0, oz: d * 0.24, bw: w * 0.48, bh: h * 0.44, bd: d * 0.5 },
-    // Tier 2: Mid-height offset boxes creating house-like silhouette
-    { ox: -w * 0.16, oy: h * 0.4, oz: -d * 0.06, bw: w * 0.48, bh: h * 0.32, bd: d * 0.48, rotY: 0.06 },
-    { ox: w * 0.2, oy: h * 0.38, oz: d * 0.14, bw: w * 0.42, bh: h * 0.3, bd: d * 0.44, rotY: -0.08, dark: true },
-    { ox: w * 0.18, oy: h * 0.38, oz: -d * 0.22, bw: w * 0.36, bh: h * 0.26, bd: d * 0.34, rotY: 0.1 },
-    { ox: -w * 0.22, oy: h * 0.4, oz: d * 0.22, bw: w * 0.34, bh: h * 0.24, bd: d * 0.32, rotY: -0.12 },
-    // Tier 3: Crown peak boxes
-    { ox: -w * 0.04, oy: h * 0.72, oz: -d * 0.04, bw: w * 0.42, bh: h * 0.28, bd: d * 0.4, rotY: -0.14 },
-    { ox: w * 0.14, oy: h * 0.68, oz: d * 0.12, bw: w * 0.26, bh: h * 0.2, bd: d * 0.26, rotY: 0.2, dark: true },
-    { ox: -w * 0.26, oy: h * 0.64, oz: d * 0.18, bw: w * 0.22, bh: h * 0.16, bd: d * 0.22, rotY: 0.08 },
+    // Tier 1: Spaced solid base crates (zero intersection between base boxes)
+    { ox: -w * 0.26, oy: 0, oz: -d * 0.26, bw: w * 0.45, bh: h * 0.41, bd: d * 0.45 },
+    { ox: w * 0.26, oy: 0, oz: -d * 0.26, bw: w * 0.45, bh: h * 0.37, bd: d * 0.45, dark: true },
+    { ox: -w * 0.26, oy: 0, oz: d * 0.26, bw: w * 0.45, bh: h * 0.39, bd: d * 0.45, dark: true },
+    { ox: w * 0.26, oy: 0, oz: d * 0.26, bw: w * 0.45, bh: h * 0.42, bd: d * 0.45 },
+    // Tier 2: Non-intersecting mid-height stacked boxes cleanly resting above Tier 1 tops
+    { ox: -w * 0.22, oy: h * 0.42, oz: -d * 0.18, bw: w * 0.38, bh: h * 0.3, bd: d * 0.36, rotY: 0.05 },
+    { ox: w * 0.22, oy: h * 0.43, oz: d * 0.18, bw: w * 0.38, bh: h * 0.29, bd: d * 0.36, rotY: -0.06, dark: true },
+    { ox: w * 0.22, oy: h * 0.38, oz: -d * 0.22, bw: w * 0.34, bh: h * 0.26, bd: d * 0.34, rotY: 0.08 },
+    { ox: -w * 0.22, oy: h * 0.4, oz: d * 0.22, bw: w * 0.34, bh: h * 0.24, bd: d * 0.32, rotY: -0.09 },
+    // Tier 3: Crown peak boxes cleanly stacked above Tier 2
+    { ox: -w * 0.04, oy: h * 0.74, oz: -d * 0.04, bw: w * 0.38, bh: h * 0.26, bd: d * 0.36, rotY: -0.1 },
+    { ox: w * 0.22, oy: h * 0.73, oz: d * 0.18, bw: w * 0.24, bh: h * 0.18, bd: d * 0.24, rotY: 0.14, dark: true },
+    { ox: -w * 0.24, oy: h * 0.65, oz: d * 0.22, bw: w * 0.22, bh: h * 0.16, bd: d * 0.22, rotY: 0.06 },
   ];
 
   for (const b of subBoxes) {
-    const geo = new THREE.BoxGeometry(b.bw, b.bh, b.bd);
-    applyWorldBoxUVs(geo, b.bw, b.bh, b.bd, 1.8);
+    const trimH = 0.035;
+    const bodyH = Math.max(0.12, b.bh - trimH);
+    const geo = new THREE.BoxGeometry(b.bw, bodyH, b.bd);
+    applyWorldBoxUVs(geo, b.bw, bodyH, b.bd, 1.8);
     const box = new THREE.Mesh(geo, b.dark ? darkPlankMat : plankMat);
-    box.position.set(b.ox, b.oy + b.bh * 0.5, b.oz);
+    box.position.set(b.ox, b.oy + bodyH * 0.5, b.oz);
     if (b.rotY) box.rotation.y = b.rotY;
     box.castShadow = true;
     box.receiveShadow = true;
     group.add(box);
 
-    // Timber top trim border
+    // Timber top trim cap seated flush inside b.bh (zero z-fighting or penetration above tier)
     const trim = new THREE.Mesh(
-      new THREE.BoxGeometry(b.bw + 0.04, 0.04, b.bd + 0.04),
+      new THREE.BoxGeometry(b.bw + 0.03, trimH, b.bd + 0.03),
       frameMat
     );
-    trim.position.set(b.ox, b.oy + b.bh + 0.02, b.oz);
+    trim.position.set(b.ox, b.oy + bodyH + trimH * 0.5, b.oz);
     if (b.rotY) trim.rotation.y = b.rotY;
     group.add(trim);
   }

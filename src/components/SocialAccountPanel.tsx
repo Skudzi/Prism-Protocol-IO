@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Cloud, Mail, RefreshCw, Send, Trash2, UserPlus, Users } from 'lucide-react';
+import { Cloud, Crosshair, Mail, RefreshCw, Send, Trash2, UserPlus, Users } from 'lucide-react';
+import { WEAPON_LIST } from '../game/catalog';
+import { calculateWeaponAccuracy, normalizeWeaponStats } from '../game/rules';
 import {
   ChatMessage,
   FriendEntry,
@@ -343,6 +345,60 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
           </div>
           <div className="text-xs text-cyan-600 dark:text-cyan-400" data-testid="cloud-sync-status">
             {syncStatus} · {new Date(profile.lastSyncedAt).toLocaleTimeString()}
+          </div>
+        </div>
+
+        {/* Per-Weapon Kills & Accuracy Breakdown */}
+        <div
+          className="mt-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 p-3"
+          data-testid="account-weapon-stats"
+        >
+          <div className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+            <Crosshair className="h-3.5 w-3.5 text-cyan-500" />
+            <span>{t(lang, 'account.weaponStats')}</span>
+          </div>
+          <div className="divide-y divide-slate-200/80 dark:divide-slate-800/80">
+            {(() => {
+              const weaponStats = normalizeWeaponStats(profile.stats.weaponStats);
+              return WEAPON_LIST.map((w) => {
+                const entry = weaponStats[w.id];
+                const acc = calculateWeaponAccuracy(entry);
+                return (
+                  <div
+                    key={w.id}
+                    data-testid={`weapon-stat-${w.id}`}
+                    className="flex items-center justify-between gap-2 py-2 text-xs first:pt-1 last:pb-0"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold text-slate-900 dark:text-white">
+                        {t(lang, `weapon.${w.id}.name` as Parameters<typeof t>[1])}
+                      </div>
+                      <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                        {t(lang, 'account.hitsShots')}: {entry.shotsHit} / {entry.shotsFired}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-4 text-right font-mono">
+                      <div>
+                        <div className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                          {t(lang, 'account.kills')}
+                        </div>
+                        <div className="font-bold text-slate-900 dark:text-white">
+                          {entry.kills}
+                        </div>
+                      </div>
+                      <div className="w-14">
+                        <div className="text-[10px] uppercase text-slate-500 dark:text-slate-400">
+                          {t(lang, 'account.accuracy')}
+                        </div>
+                        <div className="font-bold text-cyan-600 dark:text-cyan-400">
+                          {acc === null ? '--' : `${acc}%`}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
 

@@ -1,7 +1,7 @@
-import React from 'react';
-import { Check, Lock, Moon, Shuffle, Sun } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Check, Clock, Lock, Moon, Shuffle, Sun } from 'lucide-react';
 import { BATTLE_PASS_TIERS, MAP_LIST } from '../game/catalog';
-import { getBattlePassTier } from '../game/rules';
+import { getBattlePassCountdown, getBattlePassTier } from '../game/rules';
 import { LanguageCode, MapId, PlayerCloudProfile } from '../game/types';
 import { t } from '../i18n/translations';
 
@@ -117,6 +117,7 @@ interface BattlePassPanelProps {
   lang: LanguageCode;
   onUpgradePremium: () => void;
   onClaimTier: (tier: number, track: 'free' | 'premium') => void;
+  onSeasonReset: () => void;
 }
 
 export const BattlePassPanel: React.FC<BattlePassPanelProps> = ({
@@ -124,19 +125,54 @@ export const BattlePassPanel: React.FC<BattlePassPanelProps> = ({
   lang,
   onUpgradePremium,
   onClaimTier,
+  onSeasonReset,
 }) => {
   const currentTier = getBattlePassTier(profile.battlePassXp);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    setNowMs(Date.now());
+    const id = window.setInterval(() => setNowMs(Date.now()), 15000);
+    return () => clearInterval(id);
+  }, [profile.passSeasonEndsAt, profile.passSeasonNumber]);
+
+  const countdown = getBattlePassCountdown(profile.passSeasonEndsAt, nowMs);
+
+  useEffect(() => {
+    if (countdown.expired) {
+      onSeasonReset();
+    }
+  }, [countdown.expired, onSeasonReset]);
+
+  const seasonLabel = `${t(lang, 'bp.seasonLabel')} ${String(
+    profile.passSeasonNumber || 1
+  ).padStart(2, '0')}: ${t(lang, 'bp.seasonTheme')}`;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 p-4">
         <div>
           <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-            {t(lang, 'bp.title')}
+            {seasonLabel}
           </h3>
           <p className="text-xs text-slate-600 dark:text-slate-400">
             {t(lang, 'bp.tier')} {currentTier} / 10 · {profile.battlePassXp} XP · {profile.credits} CR
           </p>
+          <div
+            data-testid="bp-season-timer"
+            className="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1 text-xs font-medium text-cyan-700 dark:text-cyan-300"
+          >
+            <Clock className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              {t(lang, 'bp.nextReset')}:{' '}
+              <span className="font-mono font-bold">
+                {countdown.days}d {countdown.hours}h {countdown.minutes}m
+              </span>{' '}
+              <span className="font-mono text-[11px] opacity-85">
+                ({countdown.totalMinutes.toLocaleString()} {t(lang, 'bp.minutesRemaining')})
+              </span>
+            </span>
+          </div>
         </div>
         {!profile.battlePassPremium ? (
           <button

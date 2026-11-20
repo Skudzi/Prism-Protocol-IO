@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AVATAR_SKINS, createDefaultProfile, DEFAULT_SETTINGS, MAPS, WEAPONS, WEAPON_SKINS } from './catalog';
+import { AVATAR_SKINS, createDefaultProfile, DEFAULT_SETTINGS, MAP_LIST, MAPS, PASS_SEASON_DURATION_MS, WEAPONS, WEAPON_SKINS } from './catalog';
 import {
   applyControllerDeadzone,
   applyMatchRewards,
@@ -8,6 +8,7 @@ import {
   applyUnderfootJumpVelocity,
   calculateDamage,
   calculateMatchRewards,
+  calculateWeaponAccuracy,
   canManualReload,
   canTriggerEasterEgg,
   canTriggerUnderfootJump,
@@ -15,9 +16,13 @@ import {
   checkHealOrbPickup,
   checkJumpPadCollision,
   claimBattlePassTier,
+  computeAdaptivePerfStep,
+  detectLowPerfGpuString,
+  getBattlePassCountdown,
   getHealOrbScheduleTimes,
   getKillRankReward,
   getOperatorWeaponBodyStyle,
+  getPerfSettingsForTier,
   MAX_MATCH_CREDITS,
   MAX_MATCH_XP,
   mergeLocalAndCloudProfiles,
@@ -29,6 +34,7 @@ import {
   sampleKillCamClip,
   shouldAutoReload,
   sortLeaderboardEntries,
+  syncBattlePassSeason,
   TUTORIAL_REWARD_CREDITS,
   TUTORIAL_REWARD_XP,
   UNDERFOOT_JUMP_VELOCITY,
@@ -798,4 +804,151 @@ test('Weapon-specific operator body styles preserve player skin colors while cha
   assert.equal(smgStyle.bodyType, 'smg_woman');
   assert.equal(smgStyle.isFemaleBody, true);
 });
+
+test('All 8 maps have zero overlapping AABB obstacles to prevent Z-fighting and mesh clipping', () => {
+  assert.equal(MAP_LIST.length, 8);
+  const eps = 0.002;
+  for (const map of MAP_LIST) {
+    for (let i = 0; i < map.obstacles.length; i++) {
+      const a = map.obstacles[i];
+      const aMinX = a.x - a.w * 0.5 + eps;
+      const aMaxX = a.x + a.w * 0.5 - eps;
+      const aMinY = a.y + eps;
+      const aMaxY = a.y + a.h - eps;
+      const aMinZ = a.z - a.d * 0.5 + eps;
+      const aMaxZ = a.z + a.d * 0.5 - eps;
+
+      for (let j = i + 1; j < map.obstacles.length; j++) {
+        const b = map.obstacles[j];
+        const bMinX = b.x - b.w * 0.5 + eps;
+        const bMaxX = b.x + b.w * 0.5 - eps;
+        const bMinY = b.y + eps;
+        const bMaxY = b.y + b.h - eps;
+        const bMinZ = b.z - b.d * 0.5 + eps;
+        const bMaxZ = b.z + b.d * 0.5 - eps;
+
+        const overlapX = aMinX < bMaxX && aMaxX > bMinX;
+        const overlapY = aMinY < bMaxY && aMaxY > bMinY;
+        const overlapZ = aMinZ < bMaxZ && aMaxZ > bMinZ;
+        assert.equal(
+          overlapX && overlapY && overlapZ,
+          false,
+          `Map ${map.id} obstacles[${i}] (${a.kind ?? 'box'}) and obstacles[${j}] (${b.kind ?? 'box'}) overlap`
+        );
+      }
+    }
+  }
+});
+
+test('Per-weapon kills & accuracy accumulate across matches and mergeLocalAndCloudProfiles', () => {
+  assert.equal(calculateWeaponAccuracy(null), null);
+  assert.equal(calculateWeaponAccuracy({ kills: 0, shotsFired: 0, shotsHit: 0 }), null);
+  assert.equal(calculateWeaponAccuracy({ kills: 5, shotsFired: 40, shotsHit: 18 }), 45);
+
+  const profile = createDefaultProfile('StatTester');
+  const updated = applyMatchRewards(
+    profile,
+    {
+      gameMode: 'tdm',
+      mapId: 'orbital_hangar',
+      won: true,
+      tags: 9,
+      deaths: 2,
+      accuracy: 50,
+      xpEarned: 30,
+      creditsEarned: 125,
+      easterEggFound: false,
+      durationSec: 180,
+      weaponStats: {
+        pulse_carbine: { kills: 6, shotsFired: 60, shotsHit: 30 },
+        volt_scatter: { kills: 0, shotsFired: 0, shotsHit: 0 },
+        helios_rail: { kills: 1, shotsFired: 5, shotsHit: 3 },
+        arc_repeater: { kills: 2, shotsFired: 25, shotsHit: 12 },
+      },
+    },
+    90,
+    45
+  );
+
+  assert.ok(updated.stats.weaponStats);
+  assert.equal(updated.stats.weaponStats.pulse_carbine.kills, 6);
+  assert.equal(calculateWeaponAccuracy(updated.stats.weaponStats.pulse_carbine), 50);
+  assert.equal(updated.stats.weaponStats.helios_rail.kills, 1);
+  assert.equal(calculateWeaponAccuracy(updated.stats.weaponStats.helios_rail), 60);
+  assert.equal(updated.stats.weaponStats.arc_repeater.kills, 2);
+  assert.equal(calculateWeaponAccuracy(updated.stats.weaponStats.arc_repeater), 48);
+
+  const cloudCopy = {
+    ...profile,
+    stats: {
+      ...profile.stats,
+      weaponStats: {
+        pulse_carbine: { kills: 0, shotsFired: 0, shotsHit: 0 },
+        volt_scatter: { kills: 0, shotsFired: 0, shotsHit: 0 },
+        helios_rail: { kills: 0, shotsFired: 0, shotsHit: 0 },
+        arc_repeater: { kills: 5, shotsFired: 50, shotsHit: 25 },
+      },
+    },
+  };
+  const merged = mergeLocalAndCloudProfiles(updated, cloudCopy);
+  assert.ok(merged.stats.weaponStats);
+  assert.equal(merged.stats.weaponStats.pulse_carbine.kills, 6);
+  assert.equal(merged.stats.weaponStats.arc_repeater.kills, 5);
+});
+
+test('Battle Pass 1-month countdown and automatic season reset work cleanly', () => {
+  assert.equal(PASS_SEASON_DURATION_MS, 30 * 24 * 60 * 60 * 1000);
+  const now = Date.UTC(2026, 0, 1, 0, 0, 0);
+  const endIso = new Date(now + 10 * 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000 + 42 * 60 * 1000).toISOString();
+  const countdown = getBattlePassCountdown(endIso, now);
+  assert.equal(countdown.expired, false);
+  assert.equal(countdown.days, 10);
+  assert.equal(countdown.hours, 3);
+  assert.equal(countdown.minutes, 42);
+  assert.equal(countdown.totalMinutes, 10 * 24 * 60 + 3 * 60 + 42);
+
+  const baseProfile = createDefaultProfile('SeasonRunner');
+  const activeProfile = {
+    ...baseProfile,
+    passSeasonNumber: 1,
+    passSeasonEndsAt: new Date(now + 60_000).toISOString(),
+    battlePassXp: 180,
+    battlePassPremium: true,
+    claimedFreeTiers: [1, 2],
+    claimedPremiumTiers: [1],
+  };
+
+  const beforeExpire = syncBattlePassSeason(activeProfile, now);
+  assert.equal(beforeExpire.resetTriggered, false);
+  assert.equal(beforeExpire.profile.battlePassXp, 180);
+
+  const afterExpire = syncBattlePassSeason(activeProfile, now + 120_000);
+  assert.equal(afterExpire.resetTriggered, true);
+  assert.equal(afterExpire.profile.passSeasonNumber, 2);
+  assert.equal(afterExpire.profile.battlePassXp, 0);
+  assert.equal(afterExpire.profile.battlePassPremium, false);
+  assert.deepEqual(afterExpire.profile.claimedFreeTiers, []);
+  assert.deepEqual(afterExpire.profile.claimedPremiumTiers, []);
+  assert.ok(Date.parse(afterExpire.profile.passSeasonEndsAt || '') > now + 120_000);
+});
+
+test('Invisible adaptive performance tiering targets Intel UHD / low-core laptops without touching discrete GPUs', () => {
+  assert.equal(detectLowPerfGpuString('ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11)', 4), true);
+  assert.equal(detectLowPerfGpuString('Mesa Intel(R) Iris(R) Xe Graphics (TGL GT2)', 8), true);
+  assert.equal(detectLowPerfGpuString('ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11)', 8), false);
+  assert.equal(detectLowPerfGpuString('AMD Radeon RX 6700 XT', 12), false);
+
+  const t0 = getPerfSettingsForTier(0);
+  const steppedDown = computeAdaptivePerfStep({ tier: t0.tier, avgFrameMs: 32, minTier: 0 });
+  assert.equal(steppedDown.tier, 1);
+  assert.ok(steppedDown.renderScale < 1);
+  assert.equal(steppedDown.disableClearcoat, true);
+
+  const steppedUp = computeAdaptivePerfStep({ tier: 2, avgFrameMs: 10, minTier: 1 });
+  assert.equal(steppedUp.tier, 1);
+  const clampedMin = computeAdaptivePerfStep({ tier: 1, avgFrameMs: 9, minTier: 1 });
+  assert.equal(clampedMin.tier, 1);
+});
+
+
 

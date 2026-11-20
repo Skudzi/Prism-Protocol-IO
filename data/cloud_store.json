@@ -1,305 +1,5 @@
 {
   "users": {
-    "novaprime": {
-      "nickname": "NovaPrime",
-      "nicknameLower": "novaprime",
-      "passwordSalt": "12948c30cbcc98b071a8d286a6f165f3",
-      "passwordHash": "961e3ff764b5feb36a0d6ce3a7f475142a981259f1890db591cb7abc39e1aa4fd25ab748bc29a141b3ec1eda3ec02f878393c4a326f4d1f8e74928bb5483cf95",
-      "profile": {
-        "accountId": "acc-novaprime",
-        "nickname": "NovaPrime",
-        "platform": "Web",
-        "credits": 1250,
-        "xp": 0,
-        "battlePassXp": 250,
-        "battlePassPremium": false,
-        "claimedFreeTiers": [],
-        "claimedPremiumTiers": [],
-        "unlockedWeaponSkins": [
-          "cobalt_standard"
-        ],
-        "unlockedAvatarSkins": [
-          "vanguard_cyan",
-          "titanium_prime"
-        ],
-        "equippedWeaponId": "pulse_carbine",
-        "equippedWeaponSkinId": "cobalt_standard",
-        "equippedAvatarSkinId": "titanium_prime",
-        "tutorialCompleted": true,
-        "easterEggUnlocked": false,
-        "stats": {
-          "matchesPlayed": 0,
-          "wins": 0,
-          "tags": 0,
-          "deaths": 0,
-          "shotsFired": 0,
-          "shotsHit": 0
-        },
-        "settings": {
-          "graphicsQuality": "high",
-          "shadowQuality": "high",
-          "renderDistance": 180,
-          "vsync": false,
-          "showFps": true,
-          "fpsCap": "unlimited",
-          "fov": 80,
-          "mouseSensitivity": 1,
-          "shadowsEnabled": true,
-          "particlesEnabled": true,
-          "audioEnabled": true,
-          "masterVolume": 0.7,
-          "darkMode": true,
-          "language": "en",
-          "crossPlatformEnabled": true
-        },
-        "keybinds": {
-          "moveForward": "KeyW",
-          "moveBackward": "KeyS",
-          "moveLeft": "KeyA",
-          "moveRight": "KeyD",
-          "jump": "Space",
-          "dash": "ShiftLeft",
-          "reload": "KeyR",
-          "chat": "KeyT",
-          "pause": "KeyP",
-          "slot1": "Digit1",
-          "slot2": "Digit2",
-          "slot3": "Digit3",
-          "slot4": "Digit4"
-        },
-        "lastSyncedAt": "2026-11-17T13:59:07.140Z"
-      },
-      "friends": [
-        "Kaito_JP",
-        "Zuzana_SK",
-        "ElenaV"
-      ]
-    },
-    "kaito_jp": {
-      "nickname": "Kaito_JP",
-      "nicknameLower": "kaito_jp",
-      "passwordSalt": "704b0358f97ad522ac9bee0b8e596d5f",
-      "passwordHash": "38e44f281fa82bb0256f905b476bebfb51e9ca8dbc8a7e7d297b16f36db0ec5e18c4c29383afb7459cd9b00d08f00debe8211bf5daff68fea620e9eea497dc8c",
-      "profile": {
-        "accountId": "acc-kaito_jp",
-        "nickname": "Kaito_JP",
-        "platform": "Console",
-        "credits": 940,
-        "xp": 0,
-        "battlePassXp": 250,
-        "battlePassPremium": false,
-        "claimedFreeTiers": [],
-        "claimedPremiumTiers": [],
-        "unlockedWeaponSkins": [
-          "cobalt_standard"
-        ],
-        "unlockedAvatarSkins": [
-          "vanguard_cyan",
-          "crimson_striker"
-        ],
-        "equippedWeaponId": "pulse_carbine",
-        "equippedWeaponSkinId": "cobalt_standard",
-        "equippedAvatarSkinId": "crimson_striker",
-        "tutorialCompleted": true,
-        "easterEggUnlocked": false,
-        "stats": {
-          "matchesPlayed": 0,
-          "wins": 0,
-          "tags": 0,
-          "deaths": 0,
-          "shotsFired": 0,
-          "shotsHit": 0
-        },
-        "settings": {
-          "graphicsQuality": "high",
-          "shadowQuality": "high",
-          "renderDistance": 180,
-          "vsync": false,
-          "showFps": true,
-          "fpsCap": "unlimited",
-          "fov": 80,
-          "mouseSensitivity": 1,
-          "shadowsEnabled": true,
-          "particlesEnabled": true,
-          "audioEnabled": true,
-          "masterVolume": 0.7,
-          "darkMode": true,
-          "language": "en",
-          "crossPlatformEnabled": true
-        },
-        "keybinds": {
-          "moveForward": "KeyW",
-          "moveBackward": "KeyS",
-          "moveLeft": "KeyA",
-          "moveRight": "KeyD",
-          "jump": "Space",
-          "dash": "ShiftLeft",
-          "reload": "KeyR",
-          "chat": "KeyT",
-          "pause": "KeyP",
-          "slot1": "Digit1",
-          "slot2": "Digit2",
-          "slot3": "Digit3",
-          "slot4": "Digit4"
-        },
-        "lastSyncedAt": "2026-11-17T13:56:57.063Z"
-      },
-      "friends": [
-        "NovaPrime",
-        "Zuzana_SK",
-        "ElenaV"
-      ]
-    },
-    "zuzana_sk": {
-      "nickname": "Zuzana_SK",
-      "nicknameLower": "zuzana_sk",
-      "passwordSalt": "8cd856ef384e890b66aa30b03d53e94a",
-      "passwordHash": "7974b44a6c0a8b211db2cb7bcb1843dc567fd8832c564b3c2a1e1eccdd5747123220cf0f557732c7da990b6e88732d5aef9841ae9dbcf6af0c43243c975a6f06",
-      "profile": {
-        "accountId": "acc-zuzana_sk",
-        "nickname": "Zuzana_SK",
-        "platform": "Web",
-        "credits": 880,
-        "xp": 0,
-        "battlePassXp": 250,
-        "battlePassPremium": false,
-        "claimedFreeTiers": [],
-        "claimedPremiumTiers": [],
-        "unlockedWeaponSkins": [
-          "cobalt_standard"
-        ],
-        "unlockedAvatarSkins": [
-          "vanguard_cyan",
-          "aurora_violet"
-        ],
-        "equippedWeaponId": "pulse_carbine",
-        "equippedWeaponSkinId": "cobalt_standard",
-        "equippedAvatarSkinId": "aurora_violet",
-        "tutorialCompleted": true,
-        "easterEggUnlocked": false,
-        "stats": {
-          "matchesPlayed": 0,
-          "wins": 0,
-          "tags": 0,
-          "deaths": 0,
-          "shotsFired": 0,
-          "shotsHit": 0
-        },
-        "settings": {
-          "graphicsQuality": "high",
-          "shadowQuality": "high",
-          "renderDistance": 180,
-          "vsync": false,
-          "showFps": true,
-          "fpsCap": "unlimited",
-          "fov": 80,
-          "mouseSensitivity": 1,
-          "shadowsEnabled": true,
-          "particlesEnabled": true,
-          "audioEnabled": true,
-          "masterVolume": 0.7,
-          "darkMode": true,
-          "language": "en",
-          "crossPlatformEnabled": true
-        },
-        "keybinds": {
-          "moveForward": "KeyW",
-          "moveBackward": "KeyS",
-          "moveLeft": "KeyA",
-          "moveRight": "KeyD",
-          "jump": "Space",
-          "dash": "ShiftLeft",
-          "reload": "KeyR",
-          "chat": "KeyT",
-          "pause": "KeyP",
-          "slot1": "Digit1",
-          "slot2": "Digit2",
-          "slot3": "Digit3",
-          "slot4": "Digit4"
-        },
-        "lastSyncedAt": "2026-11-17T13:56:57.117Z"
-      },
-      "friends": [
-        "NovaPrime",
-        "Kaito_JP",
-        "ElenaV"
-      ]
-    },
-    "elenav": {
-      "nickname": "ElenaV",
-      "nicknameLower": "elenav",
-      "passwordSalt": "373aaf42c57e95096ed9b547df084a61",
-      "passwordHash": "cdefa69f07304d371ab5256f99f97f96bab68eb01270c8adb88d7a169f0b2520291cf08e9c7c9f56d4c6c01f1c96112fd842fbda2c1f228633f8ea01539d9ec5",
-      "profile": {
-        "accountId": "acc-elenav",
-        "nickname": "ElenaV",
-        "platform": "Mobile",
-        "credits": 710,
-        "xp": 0,
-        "battlePassXp": 250,
-        "battlePassPremium": false,
-        "claimedFreeTiers": [],
-        "claimedPremiumTiers": [],
-        "unlockedWeaponSkins": [
-          "cobalt_standard"
-        ],
-        "unlockedAvatarSkins": [
-          "vanguard_cyan",
-          "stealth_matte"
-        ],
-        "equippedWeaponId": "pulse_carbine",
-        "equippedWeaponSkinId": "cobalt_standard",
-        "equippedAvatarSkinId": "stealth_matte",
-        "tutorialCompleted": true,
-        "easterEggUnlocked": false,
-        "stats": {
-          "matchesPlayed": 0,
-          "wins": 0,
-          "tags": 0,
-          "deaths": 0,
-          "shotsFired": 0,
-          "shotsHit": 0
-        },
-        "settings": {
-          "graphicsQuality": "high",
-          "shadowQuality": "high",
-          "renderDistance": 180,
-          "vsync": false,
-          "showFps": true,
-          "fpsCap": "unlimited",
-          "fov": 80,
-          "mouseSensitivity": 1,
-          "shadowsEnabled": true,
-          "particlesEnabled": true,
-          "audioEnabled": true,
-          "masterVolume": 0.7,
-          "darkMode": true,
-          "language": "en",
-          "crossPlatformEnabled": true
-        },
-        "keybinds": {
-          "moveForward": "KeyW",
-          "moveBackward": "KeyS",
-          "moveLeft": "KeyA",
-          "moveRight": "KeyD",
-          "jump": "Space",
-          "dash": "ShiftLeft",
-          "reload": "KeyR",
-          "chat": "KeyT",
-          "pause": "KeyP",
-          "slot1": "Digit1",
-          "slot2": "Digit2",
-          "slot3": "Digit3",
-          "slot4": "Digit4"
-        },
-        "lastSyncedAt": "2026-11-17T13:56:57.163Z"
-      },
-      "friends": [
-        "NovaPrime",
-        "Kaito_JP",
-        "Zuzana_SK"
-      ]
-    },
     "striker99": {
       "nickname": "Striker99",
       "nicknameLower": "striker99",
@@ -333,7 +33,29 @@
           "tags": 0,
           "deaths": 0,
           "shotsFired": 0,
-          "shotsHit": 0
+          "shotsHit": 0,
+          "weaponStats": {
+            "pulse_carbine": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "volt_scatter": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "helios_rail": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "arc_repeater": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            }
+          }
         },
         "settings": {
           "graphicsQuality": "high",
@@ -348,6 +70,11 @@
           "particlesEnabled": true,
           "audioEnabled": true,
           "masterVolume": 0.7,
+          "controllerEnabled": true,
+          "controllerSensitivity": 1,
+          "controllerDeadzone": 0.15,
+          "controllerInvertY": false,
+          "controllerVibration": true,
           "darkMode": true,
           "language": "sk",
           "crossPlatformEnabled": true
@@ -367,12 +94,11 @@
           "slot3": "Digit3",
           "slot4": "Digit4"
         },
-        "lastSyncedAt": "2026-11-17T13:58:15.949Z"
+        "lastSyncedAt": "2026-11-17T13:58:15.949Z",
+        "passSeasonNumber": 1,
+        "passSeasonEndsAt": "2026-12-20T09:36:14.367Z"
       },
-      "friends": [
-        "NovaPrime",
-        "Zuzana_SK"
-      ]
+      "friends": []
     },
     "vex63999": {
       "nickname": "Vex63999",
@@ -406,7 +132,29 @@
           "tags": 0,
           "deaths": 0,
           "shotsFired": 0,
-          "shotsHit": 0
+          "shotsHit": 0,
+          "weaponStats": {
+            "pulse_carbine": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "volt_scatter": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "helios_rail": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "arc_repeater": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            }
+          }
         },
         "settings": {
           "graphicsQuality": "high",
@@ -421,6 +169,11 @@
           "particlesEnabled": true,
           "audioEnabled": true,
           "masterVolume": 0.7,
+          "controllerEnabled": true,
+          "controllerSensitivity": 1,
+          "controllerDeadzone": 0.15,
+          "controllerInvertY": false,
+          "controllerVibration": true,
           "darkMode": true,
           "language": "en",
           "crossPlatformEnabled": true
@@ -440,12 +193,11 @@
           "slot3": "Digit3",
           "slot4": "Digit4"
         },
-        "lastSyncedAt": "2026-11-17T14:01:06.021Z"
+        "lastSyncedAt": "2026-11-17T14:01:06.021Z",
+        "passSeasonNumber": 1,
+        "passSeasonEndsAt": "2026-12-20T09:36:14.367Z"
       },
-      "friends": [
-        "NovaPrime",
-        "Zuzana_SK"
-      ]
+      "friends": []
     },
     "skudzitest_8716": {
       "nickname": "SkudziTest_8716",
@@ -479,7 +231,29 @@
           "tags": 0,
           "deaths": 0,
           "shotsFired": 0,
-          "shotsHit": 0
+          "shotsHit": 0,
+          "weaponStats": {
+            "pulse_carbine": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "volt_scatter": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "helios_rail": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "arc_repeater": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            }
+          }
         },
         "settings": {
           "graphicsQuality": "high",
@@ -494,6 +268,11 @@
           "particlesEnabled": true,
           "audioEnabled": true,
           "masterVolume": 0.7,
+          "controllerEnabled": true,
+          "controllerSensitivity": 1,
+          "controllerDeadzone": 0.15,
+          "controllerInvertY": false,
+          "controllerVibration": true,
           "darkMode": true,
           "language": "en",
           "crossPlatformEnabled": true
@@ -513,12 +292,11 @@
           "slot3": "Digit3",
           "slot4": "Digit4"
         },
-        "lastSyncedAt": "2026-11-17T16:50:38.767Z"
+        "lastSyncedAt": "2026-11-17T16:50:38.767Z",
+        "passSeasonNumber": 1,
+        "passSeasonEndsAt": "2026-12-20T09:36:14.367Z"
       },
-      "friends": [
-        "NovaPrime",
-        "Zuzana_SK"
-      ]
+      "friends": []
     },
     "testvanguard99": {
       "nickname": "TestVanguard99",
@@ -552,7 +330,29 @@
           "tags": 0,
           "deaths": 0,
           "shotsFired": 0,
-          "shotsHit": 0
+          "shotsHit": 0,
+          "weaponStats": {
+            "pulse_carbine": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "volt_scatter": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "helios_rail": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "arc_repeater": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            }
+          }
         },
         "settings": {
           "graphicsQuality": "high",
@@ -567,6 +367,11 @@
           "particlesEnabled": true,
           "audioEnabled": true,
           "masterVolume": 0.7,
+          "controllerEnabled": true,
+          "controllerSensitivity": 1,
+          "controllerDeadzone": 0.15,
+          "controllerInvertY": false,
+          "controllerVibration": true,
           "darkMode": true,
           "language": "en",
           "crossPlatformEnabled": true
@@ -586,47 +391,128 @@
           "slot3": "Digit3",
           "slot4": "Digit4"
         },
-        "lastSyncedAt": "2026-11-18T11:56:01.023Z"
+        "lastSyncedAt": "2026-11-18T11:56:01.023Z",
+        "passSeasonNumber": 1,
+        "passSeasonEndsAt": "2026-12-20T09:36:14.367Z"
       },
-      "friends": [
-        "NovaPrime",
-        "Zuzana_SK"
-      ]
+      "friends": []
+    },
+    "skudzi_testing": {
+      "nickname": "Skudzi_testing",
+      "nicknameLower": "skudzi_testing",
+      "passwordSalt": "b6ac319fa872c945f7b493c14b1b031d",
+      "passwordHash": "88a0cc920cdce0a90ab732220131a862f11354f563f3f5e2ba9080d4acbe02b318af29e53f32485544abd7f81a149305e551110542d35e460565a772e5118e73",
+      "profile": {
+        "accountId": "acc-c1a5367c",
+        "nickname": "Skudzi_testing",
+        "platform": "PC",
+        "credits": 230,
+        "xp": 710,
+        "battlePassXp": 960,
+        "battlePassPremium": true,
+        "claimedFreeTiers": [
+          1,
+          2,
+          3
+        ],
+        "claimedPremiumTiers": [
+          1,
+          2,
+          3
+        ],
+        "unlockedWeaponSkins": [
+          "cobalt_standard",
+          "emerald_circuit",
+          "royal_walnut",
+          "carbon_phantom",
+          "obsidian_gold",
+          "rainbow_spectrum",
+          "solar_flare",
+          "prism_relic"
+        ],
+        "unlockedAvatarSkins": [
+          "vanguard_cyan",
+          "aurora_violet"
+        ],
+        "equippedWeaponId": "arc_repeater",
+        "equippedWeaponSkinId": "obsidian_gold",
+        "equippedAvatarSkinId": "aurora_violet",
+        "tutorialCompleted": true,
+        "easterEggUnlocked": true,
+        "stats": {
+          "matchesPlayed": 16,
+          "wins": 14,
+          "tags": 101,
+          "deaths": 22,
+          "shotsFired": 3495,
+          "shotsHit": 538,
+          "weaponStats": {
+            "pulse_carbine": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "volt_scatter": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "helios_rail": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            },
+            "arc_repeater": {
+              "kills": 0,
+              "shotsFired": 0,
+              "shotsHit": 0
+            }
+          }
+        },
+        "settings": {
+          "graphicsQuality": "ultra",
+          "shadowQuality": "ultra",
+          "renderDistance": 260,
+          "vsync": false,
+          "showFps": true,
+          "fpsCap": "unlimited",
+          "fov": 82,
+          "mouseSensitivity": 1,
+          "shadowsEnabled": true,
+          "particlesEnabled": true,
+          "audioEnabled": true,
+          "masterVolume": 0.7,
+          "controllerEnabled": true,
+          "controllerSensitivity": 1,
+          "controllerDeadzone": 0.15,
+          "controllerInvertY": false,
+          "controllerVibration": true,
+          "darkMode": true,
+          "language": "en",
+          "crossPlatformEnabled": true
+        },
+        "keybinds": {
+          "moveForward": "KeyW",
+          "moveBackward": "KeyS",
+          "moveLeft": "KeyA",
+          "moveRight": "KeyD",
+          "jump": "Space",
+          "dash": "ShiftLeft",
+          "reload": "KeyR",
+          "chat": "KeyT",
+          "pause": "KeyP",
+          "slot1": "Digit1",
+          "slot2": "Digit2",
+          "slot3": "Digit3",
+          "slot4": "Digit4"
+        },
+        "lastSyncedAt": "2026-11-20T09:37:31.341Z",
+        "passSeasonNumber": 1,
+        "passSeasonEndsAt": "2026-12-20T09:36:14.367Z"
+      },
+      "friends": []
     }
   },
-  "chatHistory": [
-    {
-      "id": "seed-1",
-      "channel": "global",
-      "sender": "NovaPrime",
-      "platform": "PC",
-      "text": "Squad up in Obsidian Vault — bring the Helios Railgun if you want to test the monolith.",
-      "timestamp": "2026-11-17T13:53:57.207Z"
-    },
-    {
-      "id": "seed-2",
-      "channel": "global",
-      "sender": "Zuzana_SK",
-      "platform": "Web",
-      "text": "Cross-play lobby is live! Anyone up for Hyperion Atrium?",
-      "timestamp": "2026-11-17T13:55:57.207Z"
-    },
-    {
-      "id": "msg-c836308c",
-      "channel": "global",
-      "sender": "Striker99",
-      "platform": "PC",
-      "text": "Ready in Obsidian Vault!",
-      "timestamp": "2026-11-17T13:57:57.895Z"
-    },
-    {
-      "id": "msg-3ced1d29",
-      "channel": "global",
-      "sender": "NovaPrime",
-      "platform": "Web",
-      "text": "Squad check from NovaPrime!",
-      "timestamp": "2026-11-17T13:59:05.910Z"
-    }
-  ],
+  "chatHistory": [],
   "sessionSecret": "bca4bc55c47186da653769e5fc2a0af7d8acfbf7c06d41d322e9ac4d36a9df65"
 }

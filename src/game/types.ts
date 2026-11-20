@@ -253,6 +253,12 @@ export interface GameSettings {
   crossPlatformEnabled: boolean;
 }
 
+export interface WeaponStatsEntry {
+  kills: number;
+  shotsFired: number;
+  shotsHit: number;
+}
+
 export interface PlayerCloudProfile {
   accountId: string;
   nickname: string;
@@ -261,6 +267,8 @@ export interface PlayerCloudProfile {
   xp: number;
   battlePassXp: number;
   battlePassPremium: boolean;
+  passSeasonNumber?: number;
+  passSeasonEndsAt?: string;
   claimedFreeTiers: number[];
   claimedPremiumTiers: number[];
   unlockedWeaponSkins: string[];
@@ -277,6 +285,7 @@ export interface PlayerCloudProfile {
     deaths: number;
     shotsFired: number;
     shotsHit: number;
+    weaponStats?: Record<WeaponId, WeaponStatsEntry>;
   };
   settings: GameSettings;
   keybinds: Keybinds;
@@ -355,4 +364,5 @@ export interface MatchSummary {
   easterEggFound: boolean;
   durationSec: number;
   leaderboard?: MatchLeaderboardEntry[];
+  weaponStats?: Record<WeaponId, WeaponStatsEntry>;
 }
