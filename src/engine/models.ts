@@ -21,6 +21,7 @@ export interface AnimatedAvatarRig {
   xrayOutlineMat: THREE.Material | null;
   nametagSprite: THREE.Sprite | null;
   nametagTexture: THREE.CanvasTexture | null;
+  spawnShieldRing: THREE.Mesh;
 }
 
 export function createNametagSprite(
@@ -89,6 +90,8 @@ export function disposeAvatarRig(rig: AnimatedAvatarRig) {
   rig.outlineMat.dispose();
   rig.xrayMaskMat?.dispose();
   rig.xrayOutlineMat?.dispose();
+  rig.spawnShieldRing.geometry.dispose();
+  (rig.spawnShieldRing.material as THREE.Material).dispose();
 }
 
 export function buildWeaponViewModel(
@@ -1009,8 +1012,26 @@ export function buildAvatarRig(
     bustArmor.castShadow = true;
     torso.add(bustArmor);
     addOutlineShell(torso, bustArmor);
+  } else if (bodyStyle.hasAssaultGear) {
+    // AR Operator (1st gun): Athletic Spec-Ops torso + flared field-coat hip tails (distinct from heavy Shotgun breacher)
+    const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.2, 0.09, 14), armorMat);
+    belt.position.y = 0;
+    torso.add(belt);
+
+    const jacket = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.195, 0.5, 14), clothMat);
+    jacket.scale.set(1.02, 1, 0.72);
+    jacket.position.y = 0.29;
+    jacket.castShadow = true;
+    torso.add(jacket);
+    addOutlineShell(torso, jacket);
+
+    const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.34, 0.28), armorMat);
+    chestPlate.position.set(0, 0.34, 0.01);
+    chestPlate.castShadow = true;
+    torso.add(chestPlate);
+    addOutlineShell(torso, chestPlate);
   } else {
-    // Standard / Heavy Tactical Torso
+    // Standard / Heavy Tactical Torso (Shotgun & Sniper)
     const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.23, 0.1, 14), armorMat);
     belt.position.y = 0;
     torso.add(belt);
@@ -1030,7 +1051,10 @@ export function buildAvatarRig(
   }
 
   // Chest core sensor ring uses skin's own visor/accent color (no forced blue fill!)
-  const chestCore = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.36, 16), visorMat);
+  const chestCore = new THREE.Mesh(
+    new THREE.CylinderGeometry(bodyStyle.hasAssaultGear ? 0.068 : 0.085, bodyStyle.hasAssaultGear ? 0.068 : 0.085, 0.36, 16),
+    visorMat
+  );
   chestCore.rotation.x = Math.PI / 2;
   chestCore.position.set(0, 0.36, 0.02);
   torso.add(chestCore);
@@ -1096,22 +1120,71 @@ export function buildAvatarRig(
       torso.add(shellLoop);
     }
   } else if (bodyStyle.hasAssaultGear) {
-    // AR Operator (1st gun): Tactical Commando chest mag pouches + left-shoulder comms antenna
-    for (const px of [-0.13, 0, 0.13]) {
-      const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.14, 0.075), trimMat);
-      pouch.position.set(px, 0.21, 0.195);
-      torso.add(pouch);
-    }
-    const backPack = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.38, 0.14), armorMat);
-    backPack.position.set(0, 0.36, -0.22);
-    torso.add(backPack);
-    addOutlineShell(torso, backPack);
+    // AR Operator (1st gun): Flared tactical coat tails + diagonal cross-chest bandolier + twin-cell radio spine pack
+    const coatTailL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.42, 0.24), clothMat);
+    coatTailL.position.set(-0.22, -0.13, -0.04);
+    coatTailL.rotation.z = -0.14;
+    coatTailL.rotation.x = 0.08;
+    coatTailL.castShadow = true;
+    torso.add(coatTailL);
+    addOutlineShell(torso, coatTailL);
 
-    const antennaMast = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.016, 0.42, 8), trimMat);
-    antennaMast.position.set(-0.14, 0.72, -0.22);
+    const coatTailR = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.42, 0.24), clothMat);
+    coatTailR.position.set(0.22, -0.13, -0.04);
+    coatTailR.rotation.z = 0.14;
+    coatTailR.rotation.x = 0.08;
+    coatTailR.castShadow = true;
+    torso.add(coatTailR);
+    addOutlineShell(torso, coatTailR);
+
+    const coatTailBack = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.4, 0.06), clothMat);
+    coatTailBack.position.set(0, -0.12, -0.17);
+    coatTailBack.rotation.x = 0.16;
+    coatTailBack.castShadow = true;
+    torso.add(coatTailBack);
+    addOutlineShell(torso, coatTailBack);
+
+    // Diagonal cross-chest tactical bandolier strap + angled rifle mag cells
+    const bandolier = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.56, 0.31), trimMat);
+    bandolier.position.set(0, 0.31, 0.015);
+    bandolier.rotation.z = -0.62;
+    torso.add(bandolier);
+    addOutlineShell(torso, bandolier);
+
+    for (const [bx, by] of [
+      [-0.1, 0.4],
+      [0.01, 0.31],
+      [0.12, 0.22],
+    ]) {
+      const magCell = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.13, 0.06), armorMat);
+      magCell.position.set(bx, by, 0.175);
+      magCell.rotation.z = -0.62;
+      torso.add(magCell);
+    }
+
+    // Twin-cell Recon Spine Pack + glowing energy strips + tall right-shoulder whip antenna
+    const packLeft = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.38, 0.14), armorMat);
+    packLeft.position.set(-0.085, 0.35, -0.2);
+    torso.add(packLeft);
+    addOutlineShell(torso, packLeft);
+
+    const packRight = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.38, 0.14), armorMat);
+    packRight.position.set(0.085, 0.35, -0.2);
+    torso.add(packRight);
+    addOutlineShell(torso, packRight);
+
+    for (const px of [-0.085, 0.085]) {
+      const cellGlow = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.24, 0.025), visorMat);
+      cellGlow.position.set(px, 0.35, -0.275);
+      torso.add(cellGlow);
+    }
+
+    const antennaMast = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.016, 0.52, 8), trimMat);
+    antennaMast.position.set(0.15, 0.78, -0.2);
+    antennaMast.rotation.z = -0.09;
     torso.add(antennaMast);
-    const antennaTip = new THREE.Mesh(new THREE.SphereGeometry(0.024, 8, 8), visorMat);
-    antennaTip.position.set(-0.14, 0.94, -0.22);
+    const antennaTip = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 8), visorMat);
+    antennaTip.position.set(0.173, 1.04, -0.2);
     torso.add(antennaTip);
   } else if (bodyStyle.hasFeatherHat) {
     // Sniper Operator: Recon mantle / shoulder drape around upper torso
@@ -1127,10 +1200,11 @@ export function buildAvatarRig(
   armL.position.set(-shoulderX, 0.49, 0);
   const pauldronRadius = isWoman || bodyStyle.hasFeatherHat ? 0.1 : 0.13;
   const pauldronL = bodyStyle.hasAssaultGear
-    ? new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 0.24), trimMat)
+    ? new THREE.Mesh(new THREE.ConeGeometry(0.135, 0.24, 6), trimMat)
     : new THREE.Mesh(new THREE.SphereGeometry(pauldronRadius, 12, 10), trimMat);
   if (bodyStyle.hasAssaultGear) {
-    pauldronL.rotation.z = 0.28;
+    pauldronL.rotation.z = 1.15;
+    pauldronL.position.set(-0.04, 0.03, 0);
   } else {
     pauldronL.scale.set(1, 0.9, 1.15);
   }
@@ -1143,16 +1217,32 @@ export function buildAvatarRig(
   sleeveL.rotation.z = 0.12;
   armL.add(sleeveL);
   addOutlineShell(armL, sleeveL);
+
+  if (bodyStyle.hasAssaultGear) {
+    // AR Operator left-forearm armored gauntlet shield
+    const gauntlet = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.26, 0.15), armorMat);
+    gauntlet.position.set(-0.075, -0.29, 0.19);
+    gauntlet.rotation.x = -0.55;
+    gauntlet.rotation.z = 0.12;
+    armL.add(gauntlet);
+    addOutlineShell(armL, gauntlet);
+
+    const gauntletTrim = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.2, 0.04), visorMat);
+    gauntletTrim.position.set(-0.105, -0.29, 0.21);
+    gauntletTrim.rotation.x = -0.55;
+    armL.add(gauntletTrim);
+  }
   torso.add(armL);
 
   // Articulated Right Arm + Weapon-Matched Blaster Prop
   const armR = new THREE.Group();
   armR.position.set(shoulderX, 0.49, 0);
   const pauldronR = bodyStyle.hasAssaultGear
-    ? new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 0.24), trimMat)
+    ? new THREE.Mesh(new THREE.ConeGeometry(0.135, 0.24, 6), trimMat)
     : new THREE.Mesh(new THREE.SphereGeometry(pauldronRadius, 12, 10), trimMat);
   if (bodyStyle.hasAssaultGear) {
-    pauldronR.rotation.z = -0.28;
+    pauldronR.rotation.z = -1.15;
+    pauldronR.position.set(0.04, 0.03, 0);
   } else {
     pauldronR.scale.set(1, 0.9, 1.15);
   }
@@ -1349,21 +1439,77 @@ export function buildAvatarRig(
     ponyLower.rotation.set(2.8, 0, -0.22);
     head.add(ponyLower);
     addOutlineShell(head, ponyLower, 0.024);
+  } else if (bodyStyle.hasAssaultGear) {
+    // AR Spec-Ops Operator: Angled tactical beret + peaked visor cap + dual cylindrical NVG optics + half-face respirator
+    const beretMat = new THREE.MeshStandardMaterial({
+      color: 0x18202c,
+      roughness: 0.78,
+      metalness: 0.12,
+    });
+    const beretRim = new THREE.Mesh(new THREE.CylinderGeometry(0.185, 0.182, 0.045, 18), trimMat);
+    beretRim.position.set(0, 0.105, 0);
+    head.add(beretRim);
+
+    const beretCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.225, 0.185, 0.115, 18), beretMat);
+    beretCrown.position.set(0.04, 0.168, -0.01);
+    beretCrown.rotation.z = -0.24;
+    beretCrown.rotation.x = -0.08;
+    head.add(beretCrown);
+    addOutlineShell(head, beretCrown, 0.025);
+
+    const beretFlash = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.07, 0.028), trimMat);
+    beretFlash.position.set(-0.07, 0.145, 0.178);
+    beretFlash.rotation.y = -0.2;
+    head.add(beretFlash);
+
+    const capPeak = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.024, 0.13), armorMat);
+    capPeak.position.set(0, 0.095, 0.18);
+    capPeak.rotation.x = 0.22;
+    head.add(capPeak);
+    addOutlineShell(head, capPeak, 0.022);
+
+    // Twin protruding Recon NVG Goggle Pods on brow
+    const nvgBar = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.036, 0.06), armorMat);
+    nvgBar.position.set(0, 0.05, 0.185);
+    head.add(nvgBar);
+    for (const gx of [-0.062, 0.062]) {
+      const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.038, 0.115, 12), armorMat);
+      pod.rotation.x = Math.PI / 2;
+      pod.position.set(gx, 0.035, 0.215);
+      head.add(pod);
+      const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.018, 12), visorMat);
+      lens.rotation.x = Math.PI / 2;
+      lens.position.set(gx, 0.035, 0.274);
+      head.add(lens);
+    }
+
+    // Angular Half-Face Tactical Respirator + Twin Side Filter Canisters
+    const respirator = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.105, 0.13), armorMat);
+    respirator.position.set(0, -0.085, 0.135);
+    head.add(respirator);
+    addOutlineShell(head, respirator, 0.022);
+
+    for (const fx of [-0.11, 0.11]) {
+      const filter = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.042, 0.06, 10), trimMat);
+      filter.rotation.z = Math.PI / 2;
+      filter.rotation.y = fx < 0 ? 0.45 : -0.45;
+      filter.position.set(fx, -0.092, 0.125);
+      head.add(filter);
+    }
+
+    const micBoom = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.17, 6), trimMat);
+    micBoom.rotation.z = Math.PI / 2;
+    micBoom.rotation.y = 0.65;
+    micBoom.position.set(0.145, -0.055, 0.1);
+    head.add(micBoom);
   } else {
-    // AR & Shotgun tactical helmet brow crest + chin guard
+    // Shotgun heavy tactical helmet brow crest + chin guard
     const crest = new THREE.Mesh(
-      new THREE.BoxGeometry(bodyStyle.hasAssaultGear ? 0.09 : 0.07, 0.055, 0.29),
+      new THREE.BoxGeometry(0.07, 0.055, 0.29),
       trimMat
     );
     crest.position.set(0, 0.175, -0.01);
     head.add(crest);
-
-    if (bodyStyle.hasAssaultGear) {
-      const browPeak = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.045, 0.12), armorMat);
-      browPeak.position.set(0, 0.09, 0.16);
-      browPeak.rotation.x = 0.2;
-      head.add(browPeak);
-    }
 
     const chinGuard = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.14), trimMat);
     chinGuard.position.set(0, -0.09, 0.11);
@@ -1380,6 +1526,21 @@ export function buildAvatarRig(
   head.add(earPodR);
 
   torso.add(head);
+
+  // Subtle translucent cyan protective halo visible ONLY during active Spawn Protection
+  const spawnShieldRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.68, 0.035, 10, 28),
+    new THREE.MeshBasicMaterial({
+      color: 0x22d3ee,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+    })
+  );
+  spawnShieldRing.rotation.x = Math.PI / 2;
+  spawnShieldRing.position.set(0, 1.05, 0);
+  spawnShieldRing.visible = false;
+  group.add(spawnShieldRing);
 
   let nametagSprite: THREE.Sprite | null = null;
   let nametagTexture: THREE.CanvasTexture | null = null;
@@ -1404,6 +1565,7 @@ export function buildAvatarRig(
     xrayOutlineMat,
     nametagSprite,
     nametagTexture,
+    spawnShieldRing,
   };
 }
 

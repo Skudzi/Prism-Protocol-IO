@@ -13,17 +13,39 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import {
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+  User as FirebaseUser,
+} from 'firebase/auth';
+import {
+  doc,
+  getDoc,
+  getDocFromServer,
+  onSnapshot,
+  setDoc,
+} from 'firebase/firestore';
 import { ArmoryPanel } from './components/ArmoryPanel';
 import { BattlePassPanel, MapsPanel } from './components/MapsBattlePassPanel';
 import { PlayingHud } from './components/PlayingHud';
 import { SettingsPanel } from './components/SettingsPanel';
 import { AccountPanel, SocialPanel } from './components/SocialAccountPanel';
 import { ArenaEngine, HudSnapshot } from './engine/ArenaEngine';
+import {
+  auth,
+  buildFirestoreProfilePayload,
+  db,
+  googleProvider,
+  OperationType,
+  sanitizeFirestoreNickname,
+} from './firebase';
 import { createDefaultProfile, DEFAULT_SETTINGS, MAPS } from './game/catalog';
 import {
   applyMatchRewards,
   applyTutorialCompletion,
   claimBattlePassTier,
+  hasProfileCloudDiff,
   mergeLocalAndCloudProfiles,
   normalizeWeaponStats,
   pickRandomMapId,
@@ -86,6 +108,7 @@ const INITIAL_HUD: HudSnapshot = {
   isKillCam: false,
   killCamRemainingMs: 0,
   deathRespawnRemainingMs: 0,
+  spawnProtectionRemainingMs: 0,
   killedBy: null,
   hasGamepad: false,
   tutorialStep: 1,
@@ -157,7 +180,13 @@ export default function App() {
   });
   const authTokenRef = useRef<string | null>(authToken);
   authTokenRef.current = authToken;
-  const [authReady, setAuthReady] = useState(false);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const firebaseUserRef = useRef<FirebaseUser | null>(null);
+  const firestoreCreatedAtRef = useRef<string | null>(null);
+  const [apiAuthReady, setApiAuthReady] = useState(false);
+  const [fbAuthReady, setFbAuthReady] = useState(false);
+  const authReady = apiAuthReady && fbAuthReady;
+  const [cloudError, setCloudError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<string>(() =>
     t(profile.settings.language, authToken ? 'account.pendingSync' : 'account.localOnly')
   );
@@ -220,6 +249,43 @@ export default function App() {
     }
   }, []);
 
+  const saveProfileToFirestore = useCallback(
+    async (nextProfile: PlayerCloudProfile, fbUser: FirebaseUser): Promise<PlayerCloudProfile | null> => {
+      const path = `users/${fbUser.uid}`;
+      const payload = buildFirestoreProfilePayload(
+        nextProfile,
+        fbUser.uid,
+        firestoreCreatedAtRef.current
+      );
+      try {
+        await setDoc(doc(db, 'users', fbUser.uid), payload);
+        firestoreCreatedAtRef.current = payload.createdAt;
+        const normalized = normalizeProfile(payload);
+        try {
+          localStorage.removeItem(STORAGE_PENDING_SYNC_KEY);
+          localStorage.setItem(STORAGE_PROFILE_KEY, JSON.stringify(normalized));
+        } catch {
+          // Ignore storage quota errors
+        }
+        setCloudError(null);
+        setSyncStatus(t(normalized.settings.language, 'account.synced'));
+        return normalized;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('Firestore Error:', { operationType: OperationType.WRITE, path, error: msg });
+        try {
+          localStorage.setItem(STORAGE_PENDING_SYNC_KEY, '1');
+        } catch {
+          // Ignore storage errors
+        }
+        setCloudError(msg);
+        setSyncStatus(t(nextProfile.settings.language, 'account.pendingSync'));
+        return null;
+      }
+    },
+    []
+  );
+
   const syncCloudSave = useCallback(
     async (nextProfile: PlayerCloudProfile, refreshFromReturn = false) => {
       const stamped: PlayerCloudProfile = {
@@ -232,8 +298,9 @@ export default function App() {
         // Ignore storage quota errors
       }
 
+      const fbUser = firebaseUserRef.current;
       const token = authTokenRef.current;
-      if (!token) {
+      if (!fbUser && !token) {
         try {
           localStorage.setItem(STORAGE_PENDING_SYNC_KEY, '1');
         } catch {
@@ -243,61 +310,273 @@ export default function App() {
         return;
       }
 
-      try {
-        setSyncStatus('Syncing...');
-        const res = await fetch('/api/cloud-save', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ profile: stamped }),
-        });
-        if (res.status === 401) {
+      setSyncStatus('Syncing...');
+      let latestMerged = stamped;
+
+      if (fbUser) {
+        if (refreshFromReturn) {
           try {
-            localStorage.removeItem(STORAGE_TOKEN_KEY);
-            localStorage.setItem(STORAGE_PENDING_SYNC_KEY, '1');
+            const snap = await getDocFromServer(doc(db, 'users', fbUser.uid));
+            if (snap.exists()) {
+              const rawCloud = snap.data() as PlayerCloudProfile & { createdAt?: string };
+              if (typeof rawCloud.createdAt === 'string') {
+                firestoreCreatedAtRef.current = rawCloud.createdAt;
+              }
+              const cloudProfile = normalizeProfile(rawCloud);
+              const localAligned: PlayerCloudProfile = {
+                ...stamped,
+                accountId: fbUser.uid,
+              };
+              latestMerged = normalizeProfile(mergeLocalAndCloudProfiles(localAligned, cloudProfile));
+              setProfile(latestMerged);
+            }
           } catch {
-            // Ignore storage errors
+            // Continue and attempt direct write
           }
-          setAuthToken(null);
-          setSyncStatus(t(stamped.settings.language, 'account.localOnly'));
-          return;
         }
-        if (!res.ok) {
-          try {
-            localStorage.setItem(STORAGE_PENDING_SYNC_KEY, '1');
-          } catch {
-            // Ignore storage errors
-          }
-          setSyncStatus(t(stamped.settings.language, 'account.pendingSync'));
-          return;
+        const saved = await saveProfileToFirestore(latestMerged, fbUser);
+        if (saved && refreshFromReturn) {
+          setProfile(saved);
         }
-        const data = await res.json();
-        if (data?.profile) {
-          const normalized = normalizeProfile(data.profile as PlayerCloudProfile);
-          try {
-            localStorage.removeItem(STORAGE_PENDING_SYNC_KEY);
-            localStorage.setItem(STORAGE_PROFILE_KEY, JSON.stringify(normalized));
-          } catch {
-            // Ignore storage errors
-          }
-          if (refreshFromReturn) {
-            setProfile(normalized);
-          }
-          setSyncStatus(t(normalized.settings.language, 'account.synced'));
-        }
-      } catch {
+      }
+
+      if (token) {
         try {
-          localStorage.setItem(STORAGE_PENDING_SYNC_KEY, '1');
+          const res = await fetch('/api/cloud-save', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ profile: latestMerged }),
+          });
+          if (res.status === 401) {
+            try {
+              localStorage.removeItem(STORAGE_TOKEN_KEY);
+              if (!fbUser) localStorage.setItem(STORAGE_PENDING_SYNC_KEY, '1');
+            } catch {
+              // Ignore storage errors
+            }
+            setAuthToken(null);
+            if (!fbUser) {
+              setSyncStatus(t(latestMerged.settings.language, 'account.localOnly'));
+            }
+            return;
+          }
+          if (!res.ok) {
+            if (!fbUser) {
+              try {
+                localStorage.setItem(STORAGE_PENDING_SYNC_KEY, '1');
+              } catch {
+                // Ignore
+              }
+              setSyncStatus(t(latestMerged.settings.language, 'account.pendingSync'));
+            }
+            return;
+          }
+          const data = await res.json();
+          if (data?.profile && !fbUser) {
+            const normalized = normalizeProfile(data.profile as PlayerCloudProfile);
+            try {
+              localStorage.removeItem(STORAGE_PENDING_SYNC_KEY);
+              localStorage.setItem(STORAGE_PROFILE_KEY, JSON.stringify(normalized));
+            } catch {
+              // Ignore storage errors
+            }
+            if (refreshFromReturn) {
+              setProfile(normalized);
+            }
+            setSyncStatus(t(normalized.settings.language, 'account.synced'));
+          }
         } catch {
-          // Ignore storage errors
+          if (!fbUser) {
+            try {
+              localStorage.setItem(STORAGE_PENDING_SYNC_KEY, '1');
+            } catch {
+              // Ignore storage errors
+            }
+            setSyncStatus(t(latestMerged.settings.language, 'account.pendingSync'));
+          }
         }
-        setSyncStatus(t(stamped.settings.language, 'account.pendingSync'));
       }
     },
-    []
+    [saveProfileToFirestore]
   );
+
+  // Firebase Auth & Firestore Cloud Save Listener + Real-Time Cross-Device Snapshot
+  useEffect(() => {
+    let cancelled = false;
+    let unsubscribeSnapshot: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
+      if (unsubscribeSnapshot) {
+        unsubscribeSnapshot();
+        unsubscribeSnapshot = null;
+      }
+
+      if (!fbUser) {
+        firebaseUserRef.current = null;
+        firestoreCreatedAtRef.current = null;
+        if (!cancelled) {
+          setFirebaseUser(null);
+          setFbAuthReady(true);
+          if (!authTokenRef.current) {
+            setSyncStatus(t(profileRef.current.settings.language, 'account.localOnly'));
+          }
+        }
+        return;
+      }
+
+      firebaseUserRef.current = fbUser;
+      if (!cancelled) {
+        setFirebaseUser(fbUser);
+        setCloudError(null);
+        setSyncStatus('Syncing...');
+      }
+
+      const userRef = doc(db, 'users', fbUser.uid);
+      const path = `users/${fbUser.uid}`;
+
+      try {
+        let snap;
+        try {
+          snap = await getDocFromServer(userRef);
+        } catch {
+          snap = await getDoc(userRef);
+        }
+
+        if (cancelled) return;
+
+        const localProfile = readLocalProfile() ?? profileRef.current;
+        const hasPendingLocal = (() => {
+          try {
+            return localStorage.getItem(STORAGE_PENDING_SYNC_KEY) === '1';
+          } catch {
+            return false;
+          }
+        })();
+
+        if (!snap.exists()) {
+          firestoreCreatedAtRef.current = null;
+          const seedNickname =
+            localProfile.nickname && localProfile.nickname !== 'Vanguard01'
+              ? sanitizeFirestoreNickname(localProfile.nickname)
+              : sanitizeFirestoreNickname(fbUser.displayName, 'PrismPlayer');
+          const seedProfile: PlayerCloudProfile = normalizeProfile({
+            ...localProfile,
+            accountId: fbUser.uid,
+            nickname: seedNickname,
+          });
+          const saved = await saveProfileToFirestore(seedProfile, fbUser);
+          if (!cancelled) {
+            setProfile(saved ?? seedProfile);
+          }
+        } else {
+          const rawCloud = snap.data() as PlayerCloudProfile & { createdAt?: string };
+          if (typeof rawCloud.createdAt === 'string') {
+            firestoreCreatedAtRef.current = rawCloud.createdAt;
+          }
+          const cloudProfile = normalizeProfile(rawCloud);
+
+          const shouldMergeLocal =
+            localProfile.accountId === fbUser.uid || localProfile.accountId.startsWith('local-');
+          const merged = shouldMergeLocal
+            ? normalizeProfile(
+                mergeLocalAndCloudProfiles(
+                  {
+                    ...localProfile,
+                    accountId: fbUser.uid,
+                    nickname:
+                      localProfile.nickname && localProfile.nickname !== 'Vanguard01'
+                        ? sanitizeFirestoreNickname(localProfile.nickname)
+                        : cloudProfile.nickname,
+                  },
+                  cloudProfile
+                )
+              )
+            : cloudProfile;
+
+          if (!cancelled) {
+            setProfile(merged);
+            try {
+              localStorage.setItem(STORAGE_PROFILE_KEY, JSON.stringify(merged));
+            } catch {
+              // Ignore
+            }
+          }
+
+          if (hasPendingLocal || hasProfileCloudDiff(merged, cloudProfile)) {
+            await saveProfileToFirestore(merged, fbUser);
+          } else if (!cancelled) {
+            try {
+              localStorage.removeItem(STORAGE_PENDING_SYNC_KEY);
+            } catch {
+              // Ignore
+            }
+            setCloudError(null);
+            setSyncStatus(t(merged.settings.language, 'account.synced'));
+          }
+        }
+
+        if (!cancelled) {
+          unsubscribeSnapshot = onSnapshot(
+            userRef,
+            (liveSnap) => {
+              if (!liveSnap.exists() || liveSnap.metadata.hasPendingWrites) return;
+              const rawLive = liveSnap.data() as PlayerCloudProfile & { createdAt?: string };
+              if (typeof rawLive.createdAt === 'string') {
+                firestoreCreatedAtRef.current = rawLive.createdAt;
+              }
+              const cloudLive = normalizeProfile(rawLive);
+              const curLocal = profileRef.current;
+              const alignedLocal: PlayerCloudProfile = {
+                ...curLocal,
+                accountId: fbUser.uid,
+              };
+              const mergedLive = normalizeProfile(
+                mergeLocalAndCloudProfiles(alignedLocal, cloudLive)
+              );
+              if (hasProfileCloudDiff(mergedLive, curLocal)) {
+                setProfile(mergedLive);
+                try {
+                  localStorage.setItem(STORAGE_PROFILE_KEY, JSON.stringify(mergedLive));
+                } catch {
+                  // Ignore
+                }
+              }
+            },
+            (err) => {
+              console.error('Firestore Snapshot Error:', {
+                operationType: OperationType.GET,
+                path,
+                error: err.message,
+              });
+              setCloudError(err.message);
+            }
+          );
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('Firestore Error:', { operationType: OperationType.GET, path, error: msg });
+        if (!cancelled) {
+          setCloudError(msg);
+          setSyncStatus(t(profileRef.current.settings.language, 'account.pendingSync'));
+        }
+      } finally {
+        if (!cancelled) {
+          setFbAuthReady(true);
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribeAuth();
+      if (unsubscribeSnapshot) {
+        unsubscribeSnapshot();
+      }
+    };
+  }, [saveProfileToFirestore]);
 
   // Restore saved username/password session on boot and merge Local + Cloud progress
   useEffect(() => {
@@ -306,8 +585,10 @@ export default function App() {
       const savedToken = authTokenRef.current;
       if (!savedToken) {
         if (!cancelled) {
-          setAuthReady(true);
-          setSyncStatus(t(profileRef.current.settings.language, 'account.localOnly'));
+          setApiAuthReady(true);
+          if (!firebaseUserRef.current) {
+            setSyncStatus(t(profileRef.current.settings.language, 'account.localOnly'));
+          }
           void refreshSocial(null);
         }
         return;
@@ -319,7 +600,7 @@ export default function App() {
         });
         if (res.ok) {
           const data = await res.json();
-          if (!cancelled && data?.profile) {
+          if (!cancelled && data?.profile && !firebaseUserRef.current) {
             const cloudProfile = normalizeProfile(data.profile as PlayerCloudProfile);
             const localProfile = readLocalProfile();
             const hasPendingLocal = (() => {
@@ -335,16 +616,7 @@ export default function App() {
               : cloudProfile;
             setProfile(merged);
 
-            const needsCloudPush =
-              hasPendingLocal ||
-              merged.xp !== cloudProfile.xp ||
-              merged.credits !== cloudProfile.credits ||
-              merged.passSeasonNumber !== cloudProfile.passSeasonNumber ||
-              merged.tutorialCompleted !== cloudProfile.tutorialCompleted ||
-              merged.stats.matchesPlayed !== cloudProfile.stats.matchesPlayed ||
-              merged.stats.shotsFired !== cloudProfile.stats.shotsFired ||
-              merged.unlockedWeaponSkins.length !== cloudProfile.unlockedWeaponSkins.length ||
-              merged.unlockedAvatarSkins.length !== cloudProfile.unlockedAvatarSkins.length;
+            const needsCloudPush = hasPendingLocal || hasProfileCloudDiff(merged, cloudProfile);
 
             if (needsCloudPush) {
               await syncCloudSave(merged);
@@ -366,17 +638,19 @@ export default function App() {
           }
           if (!cancelled) {
             setAuthToken(null);
-            setSyncStatus(t(profileRef.current.settings.language, 'account.localOnly'));
+            if (!firebaseUserRef.current) {
+              setSyncStatus(t(profileRef.current.settings.language, 'account.localOnly'));
+            }
             void refreshSocial(null);
           }
         }
       } catch {
-        if (!cancelled) {
+        if (!cancelled && !firebaseUserRef.current) {
           setSyncStatus(t(profileRef.current.settings.language, 'account.pendingSync'));
         }
       } finally {
         if (!cancelled) {
-          setAuthReady(true);
+          setApiAuthReady(true);
         }
       }
     };
@@ -780,16 +1054,7 @@ export default function App() {
         : cloudProfile;
       setProfile(merged);
 
-      if (
-        merged.xp !== cloudProfile.xp ||
-        merged.credits !== cloudProfile.credits ||
-        merged.passSeasonNumber !== cloudProfile.passSeasonNumber ||
-        merged.tutorialCompleted !== cloudProfile.tutorialCompleted ||
-        merged.stats.matchesPlayed !== cloudProfile.stats.matchesPlayed ||
-        merged.stats.shotsFired !== cloudProfile.stats.shotsFired ||
-        merged.unlockedWeaponSkins.length !== cloudProfile.unlockedWeaponSkins.length ||
-        merged.unlockedAvatarSkins.length !== cloudProfile.unlockedAvatarSkins.length
-      ) {
+      if (hasProfileCloudDiff(merged, cloudProfile)) {
         await syncCloudSave(merged);
       } else {
         try {
@@ -850,6 +1115,21 @@ export default function App() {
     }
   };
 
+  const handleGoogleSignIn = async (): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      setCloudError(null);
+      await signInWithPopup(auth, googleProvider);
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Google sign-in failed.';
+      if (msg.includes('popup-closed-by-user')) {
+        return { ok: false, error: 'Sign-in popup closed before completion.' };
+      }
+      setCloudError(msg);
+      return { ok: false, error: msg };
+    }
+  };
+
   const handleUpdatePlatform = async (
     platform: PlatformType
   ): Promise<{ ok: boolean; error?: string }> => {
@@ -864,13 +1144,24 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
+      if (auth.currentUser) {
+        await signOut(auth);
+      }
+    } catch {
+      // Ignore Firebase sign-out errors
+    }
+    try {
       localStorage.removeItem(STORAGE_TOKEN_KEY);
       localStorage.removeItem(STORAGE_PENDING_SYNC_KEY);
     } catch {
       // Ignore storage errors
     }
+    firebaseUserRef.current = null;
+    firestoreCreatedAtRef.current = null;
+    setFirebaseUser(null);
     authTokenRef.current = null;
     setAuthToken(null);
+    setCloudError(null);
     const guest = createDefaultProfile('Vanguard01');
     setProfile(guest);
     setSyncStatus(t(guest.settings.language, 'account.localOnly'));
@@ -1250,10 +1541,14 @@ export default function App() {
                 {activeTab === 'account' && (
                   <AccountPanel
                     profile={profile}
-                    isAuthenticated={Boolean(authToken)}
+                    isAuthenticated={Boolean(firebaseUser || authToken)}
+                    isGoogleSynced={Boolean(firebaseUser)}
+                    cloudEmail={firebaseUser?.email ?? null}
+                    cloudError={cloudError}
                     authReady={authReady}
                     lang={lang}
                     syncStatus={syncStatus}
+                    onGoogleSignIn={handleGoogleSignIn}
                     onLogin={handleLogin}
                     onRegister={handleRegister}
                     onUpdatePlatform={handleUpdatePlatform}

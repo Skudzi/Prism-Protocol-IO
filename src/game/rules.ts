@@ -1191,3 +1191,121 @@ export function getOperatorWeaponBodyStyle(
   };
 }
 
+export const SPAWN_PROTECTION_DURATION_MS = 3000;
+
+export interface SpawnProtectionState {
+  active: boolean;
+  expiresAtMs: number;
+}
+
+export function createSpawnProtection(
+  nowMs: number,
+  durationMs = SPAWN_PROTECTION_DURATION_MS
+): SpawnProtectionState {
+  return {
+    active: durationMs > 0,
+    expiresAtMs: nowMs + Math.max(0, durationMs),
+  };
+}
+
+export function isSpawnProtectionActive(
+  state: SpawnProtectionState | null | undefined,
+  nowMs: number
+): boolean {
+  if (!state || !state.active) return false;
+  return nowMs < state.expiresAtMs;
+}
+
+export function getSpawnProtectionRemainingMs(
+  state: SpawnProtectionState | null | undefined,
+  nowMs: number
+): number {
+  if (!state || !state.active) return 0;
+  return Math.max(0, state.expiresAtMs - nowMs);
+}
+
+export function clearSpawnProtectionOnShot(
+  state: SpawnProtectionState | null | undefined
+): SpawnProtectionState {
+  if (!state) return { active: false, expiresAtMs: 0 };
+  if (!state.active) return state;
+  return { active: false, expiresAtMs: 0 };
+}
+
+export function getSpawnProtectedDamageMultiplier(
+  state: SpawnProtectionState | null | undefined,
+  nowMs: number
+): 0 | 1 {
+  return isSpawnProtectionActive(state, nowMs) ? 0 : 1;
+}
+
+export function applyIncomingDamageWithSpawnProtection(
+  rawDamage: number,
+  state: SpawnProtectionState | null | undefined,
+  nowMs: number
+): { damage: number; blocked: boolean; nextState: SpawnProtectionState } {
+  const active = isSpawnProtectionActive(state, nowMs);
+  if (active) {
+    return {
+      damage: 0,
+      blocked: true,
+      nextState: state as SpawnProtectionState,
+    };
+  }
+  const safeDamage = Math.max(0, Math.round(rawDamage));
+  return {
+    damage: safeDamage,
+    blocked: false,
+    nextState: state && state.active ? { active: false, expiresAtMs: 0 } : state ?? { active: false, expiresAtMs: 0 },
+  };
+}
+
+export function hasProfileCloudDiff(
+  a: PlayerCloudProfile,
+  b: PlayerCloudProfile
+): boolean {
+  if (
+    a.nickname !== b.nickname ||
+    a.platform !== b.platform ||
+    a.credits !== b.credits ||
+    a.xp !== b.xp ||
+    a.battlePassXp !== b.battlePassXp ||
+    a.battlePassPremium !== b.battlePassPremium ||
+    a.passSeasonNumber !== b.passSeasonNumber ||
+    a.passSeasonEndsAt !== b.passSeasonEndsAt ||
+    a.equippedWeaponId !== b.equippedWeaponId ||
+    a.equippedWeaponSkinId !== b.equippedWeaponSkinId ||
+    a.equippedAvatarSkinId !== b.equippedAvatarSkinId ||
+    a.tutorialCompleted !== b.tutorialCompleted ||
+    a.easterEggUnlocked !== b.easterEggUnlocked ||
+    a.claimedFreeTiers.length !== b.claimedFreeTiers.length ||
+    a.claimedPremiumTiers.length !== b.claimedPremiumTiers.length ||
+    a.unlockedWeaponSkins.length !== b.unlockedWeaponSkins.length ||
+    a.unlockedAvatarSkins.length !== b.unlockedAvatarSkins.length ||
+    a.stats.matchesPlayed !== b.stats.matchesPlayed ||
+    a.stats.wins !== b.stats.wins ||
+    a.stats.tags !== b.stats.tags ||
+    a.stats.deaths !== b.stats.deaths ||
+    a.stats.shotsFired !== b.stats.shotsFired ||
+    a.stats.shotsHit !== b.stats.shotsHit
+  ) {
+    return true;
+  }
+
+  const aWeapons = normalizeWeaponStats(a.stats?.weaponStats);
+  const bWeapons = normalizeWeaponStats(b.stats?.weaponStats);
+  for (const id of WEAPON_IDS) {
+    if (
+      aWeapons[id].kills !== bWeapons[id].kills ||
+      aWeapons[id].shotsFired !== bWeapons[id].shotsFired ||
+      aWeapons[id].shotsHit !== bWeapons[id].shotsHit
+    ) {
+      return true;
+    }
+  }
+
+  return (
+    JSON.stringify(a.settings) !== JSON.stringify(b.settings) ||
+    JSON.stringify(a.keybinds) !== JSON.stringify(b.keybinds)
+  );
+}

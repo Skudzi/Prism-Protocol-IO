@@ -83,16 +83,36 @@ service cloud.firestore {
         isValidSkinId(arr[0]);
     }
 
+    function isValidWeaponStatEntry(entry) {
+      return entry is map &&
+        entry.keys().hasAll(['kills', 'shotsFired', 'shotsHit']) &&
+        entry.keys().hasOnly(['kills', 'shotsFired', 'shotsHit']) &&
+        isNonNegInt(entry.kills, 100000000) &&
+        isNonNegInt(entry.shotsFired, 1000000000) &&
+        isNonNegInt(entry.shotsHit, 1000000000);
+    }
+
+    function isValidWeaponStatsMap(ws) {
+      return ws is map &&
+        ws.keys().hasAll(['pulse_carbine', 'volt_scatter', 'helios_rail', 'arc_repeater']) &&
+        ws.keys().hasOnly(['pulse_carbine', 'volt_scatter', 'helios_rail', 'arc_repeater']) &&
+        isValidWeaponStatEntry(ws.pulse_carbine) &&
+        isValidWeaponStatEntry(ws.volt_scatter) &&
+        isValidWeaponStatEntry(ws.helios_rail) &&
+        isValidWeaponStatEntry(ws.arc_repeater);
+    }
+
     function isValidStats(stats) {
       return stats is map &&
-        stats.keys().hasAll(['matchesPlayed', 'wins', 'tags', 'deaths', 'shotsFired', 'shotsHit']) &&
-        stats.keys().hasOnly(['matchesPlayed', 'wins', 'tags', 'deaths', 'shotsFired', 'shotsHit']) &&
+        stats.keys().hasAll(['matchesPlayed', 'wins', 'tags', 'deaths', 'shotsFired', 'shotsHit', 'weaponStats']) &&
+        stats.keys().hasOnly(['matchesPlayed', 'wins', 'tags', 'deaths', 'shotsFired', 'shotsHit', 'weaponStats']) &&
         isNonNegInt(stats.matchesPlayed, 10000000) &&
         isNonNegInt(stats.wins, 10000000) &&
         isNonNegInt(stats.tags, 100000000) &&
         isNonNegInt(stats.deaths, 100000000) &&
         isNonNegInt(stats.shotsFired, 1000000000) &&
-        isNonNegInt(stats.shotsHit, 1000000000);
+        isNonNegInt(stats.shotsHit, 1000000000) &&
+        isValidWeaponStatsMap(stats.weaponStats);
     }
 
     function isValidSettings(s) {
@@ -100,12 +120,16 @@ service cloud.firestore {
         s.keys().hasAll([
           'graphicsQuality', 'shadowQuality', 'renderDistance', 'vsync', 'showFps',
           'fpsCap', 'fov', 'mouseSensitivity', 'shadowsEnabled', 'particlesEnabled',
-          'audioEnabled', 'masterVolume', 'darkMode', 'language', 'crossPlatformEnabled'
+          'audioEnabled', 'masterVolume', 'controllerEnabled', 'controllerSensitivity',
+          'controllerDeadzone', 'controllerInvertY', 'controllerVibration',
+          'darkMode', 'language', 'crossPlatformEnabled'
         ]) &&
         s.keys().hasOnly([
           'graphicsQuality', 'shadowQuality', 'renderDistance', 'vsync', 'showFps',
           'fpsCap', 'fov', 'mouseSensitivity', 'shadowsEnabled', 'particlesEnabled',
-          'audioEnabled', 'masterVolume', 'darkMode', 'language', 'crossPlatformEnabled'
+          'audioEnabled', 'masterVolume', 'controllerEnabled', 'controllerSensitivity',
+          'controllerDeadzone', 'controllerInvertY', 'controllerVibration',
+          'darkMode', 'language', 'crossPlatformEnabled'
         ]) &&
         s.graphicsQuality is string && s.graphicsQuality in ['low', 'medium', 'high', 'ultra'] &&
         s.shadowQuality is string && s.shadowQuality in ['off', 'low', 'medium', 'high', 'ultra'] &&
@@ -119,6 +143,11 @@ service cloud.firestore {
         s.particlesEnabled is bool &&
         s.audioEnabled is bool &&
         isNonNegNumber(s.masterVolume, 1) &&
+        s.controllerEnabled is bool &&
+        isNonNegNumber(s.controllerSensitivity, 20) &&
+        isNonNegNumber(s.controllerDeadzone, 1) &&
+        s.controllerInvertY is bool &&
+        s.controllerVibration is bool &&
         s.darkMode is bool &&
         s.language is string && s.language in ['en', 'es', 'sk', 'fr', 'ja'] &&
         s.crossPlatformEnabled is bool;
@@ -153,7 +182,8 @@ service cloud.firestore {
       return data is map &&
         data.keys().hasAll([
           'accountId', 'nickname', 'platform', 'credits', 'xp', 'battlePassXp',
-          'battlePassPremium', 'claimedFreeTiers', 'claimedPremiumTiers',
+          'battlePassPremium', 'passSeasonNumber', 'passSeasonEndsAt',
+          'claimedFreeTiers', 'claimedPremiumTiers',
           'unlockedWeaponSkins', 'unlockedAvatarSkins', 'equippedWeaponId',
           'equippedWeaponSkinId', 'equippedAvatarSkinId', 'tutorialCompleted',
           'easterEggUnlocked', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
@@ -161,7 +191,8 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'accountId', 'nickname', 'platform', 'credits', 'xp', 'battlePassXp',
-          'battlePassPremium', 'claimedFreeTiers', 'claimedPremiumTiers',
+          'battlePassPremium', 'passSeasonNumber', 'passSeasonEndsAt',
+          'claimedFreeTiers', 'claimedPremiumTiers',
           'unlockedWeaponSkins', 'unlockedAvatarSkins', 'equippedWeaponId',
           'equippedWeaponSkinId', 'equippedAvatarSkinId', 'tutorialCompleted',
           'easterEggUnlocked', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
@@ -175,6 +206,9 @@ service cloud.firestore {
         isNonNegInt(data.xp, 100000000) &&
         isNonNegInt(data.battlePassXp, 100000000) &&
         data.battlePassPremium is bool &&
+        isNonNegInt(data.passSeasonNumber, 100000) &&
+        data.passSeasonNumber >= 1 &&
+        isValidIsoTimestamp(data.passSeasonEndsAt) &&
         isValidTierList(data.claimedFreeTiers, 50) &&
         isValidTierList(data.claimedPremiumTiers, 50) &&
         isValidSkinList(data.unlockedWeaponSkins, 100) &&
@@ -202,7 +236,8 @@ service cloud.firestore {
     function isProfileProgressionSyncAction() {
       return incoming().diff(existing()).affectedKeys().hasOnly([
         'nickname', 'platform', 'credits', 'xp', 'battlePassXp',
-        'battlePassPremium', 'claimedFreeTiers', 'claimedPremiumTiers',
+        'battlePassPremium', 'passSeasonNumber', 'passSeasonEndsAt',
+        'claimedFreeTiers', 'claimedPremiumTiers',
         'unlockedWeaponSkins', 'unlockedAvatarSkins', 'equippedWeaponId',
         'equippedWeaponSkinId', 'equippedAvatarSkinId', 'tutorialCompleted',
         'easterEggUnlocked', 'stats', 'settings', 'keybinds', 'lastSyncedAt',

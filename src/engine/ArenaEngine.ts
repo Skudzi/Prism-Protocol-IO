@@ -12,6 +12,7 @@ import {
 import {
   AdaptivePerfSettings,
   applyControllerDeadzone,
+  applyIncomingDamageWithSpawnProtection,
   applyUnderfootJumpVelocity,
   calculateDamage,
   calculateMatchRewards,
@@ -20,11 +21,15 @@ import {
   canTriggerUnderfootJump,
   castLaserRay,
   checkHealOrbPickup,
+  clearSpawnProtectionOnShot,
   computeAdaptivePerfStep,
+  createSpawnProtection,
   DEATH_RESPAWN_COOLDOWN_MS,
   detectLowPerfGpuString,
   getHealOrbScheduleTimes,
   getPerfSettingsForTier,
+  getSpawnProtectionRemainingMs,
+  isSpawnProtectionActive,
   KILL_CAM_DURATION_MS,
   KillCamSample,
   pickOpenHealOrbPosition,
@@ -33,6 +38,7 @@ import {
   sampleKillCamClip,
   shouldAutoReload,
   sortLeaderboardEntries,
+  SpawnProtectionState,
 } from '../game/rules';
 import {
   GameMode,
@@ -127,6 +133,7 @@ export interface HudSnapshot {
   isKillCam: boolean;
   killCamRemainingMs: number;
   deathRespawnRemainingMs: number;
+  spawnProtectionRemainingMs: number;
   killedBy: string | null;
   hasGamepad: boolean;
   killsFeed: Array<{ id: string; text: string }>;
@@ -160,6 +167,7 @@ interface BotEntity {
   hitFlashTimer: number;
   kills: number;
   deaths: number;
+  spawnProtection: SpawnProtectionState;
   poseHistory: KillCamSample[];
   lastPoseSampleMs: number;
 }
@@ -355,6 +363,7 @@ export class ArenaEngine {
   private killCamBeamColor = '#ef4444';
   private killCamBeamFired = false;
   private deathRespawnRemainingMs = 0;
+  private playerSpawnProtection: SpawnProtectionState = { active: false, expiresAtMs: 0 };
   private killedBy: string | null = null;
   private killsFeed: Array<{ id: string; text: string }> = [];
 
@@ -872,6 +881,7 @@ export class ArenaEngine {
     this.killCamClip = [];
     this.killCamBeamFired = false;
     this.deathRespawnRemainingMs = 0;
+    this.playerSpawnProtection = createSpawnProtection(performance.now());
     this.killedBy = null;
     this.camera.fov = this.settings.fov;
     this.camera.updateProjectionMatrix();
@@ -919,6 +929,7 @@ export class ArenaEngine {
     this.killCamClip = [];
     this.killCamBeamFired = false;
     this.deathRespawnRemainingMs = 0;
+    this.playerSpawnProtection = createSpawnProtection(performance.now());
     this.killedBy = null;
     this.hp = this.maxHp;
     this.ammoByWeapon[this.weaponId] = WEAPONS[this.weaponId].magSize;
@@ -1717,6 +1728,7 @@ export class ArenaEngine {
           hitFlashTimer: 0,
           kills: 0,
           deaths: 0,
+          spawnProtection: { active: false, expiresAtMs: 0 },
           poseHistory: [],
           lastPoseSampleMs: 0,
         });
@@ -1770,6 +1782,7 @@ export class ArenaEngine {
       rig.group.position.set(sp.x, sp.y, sp.z);
       this.botsGroup.add(rig.group);
 
+      const spawnNow = performance.now();
       this.bots.push({
         id: `bot-${cfg.name.toLowerCase()}`,
         nickname: cfg.name,
@@ -1797,9 +1810,10 @@ export class ArenaEngine {
         hitFlashTimer: 0,
         kills: 0,
         deaths: 0,
+        spawnProtection: createSpawnProtection(spawnNow),
         poseHistory: [
           {
-            t: performance.now() / 1000,
+            t: spawnNow / 1000,
             attackerX: sp.x,
             attackerY: sp.y,
             attackerZ: sp.z,
@@ -1809,7 +1823,7 @@ export class ArenaEngine {
             victimZ: this.playerPos.z,
           },
         ],
-        lastPoseSampleMs: performance.now(),
+        lastPoseSampleMs: spawnNow,
       });
     }
   }
@@ -1992,6 +2006,8 @@ export class ArenaEngine {
     }
 
     this.lastFireMs = now;
+    // Firing immediately switches off spawn protection
+    this.playerSpawnProtection = clearSpawnProtectionOnShot(this.playerSpawnProtection);
     const nextAmmo = Math.max(0, currentAmmo - 1);
     this.ammoByWeapon[this.weaponId] = nextAmmo;
 
@@ -2120,45 +2136,53 @@ export class ArenaEngine {
         const dmg = calculateDamage(weapon.damage, hit.hitZone ?? 'body');
         const bot = this.bots.find((b) => b.id === hit.targetId);
         if (bot && bot.alive) {
-          bot.hp -= dmg;
-          bot.hitFlashTimer = 0.09;
-          if (Math.random() < 0.6) bot.strafeSign *= -1;
-          this.hitMarkerMs = isHeadshot ? 260 : 180;
-          this.lastHitZone = hit.hitZone ?? 'body';
-          if (bot.hp <= 0) {
-            bot.alive = false;
-            bot.deaths++;
-            bot.respawnTimer = this.isTutorial ? 999 : 3.2;
-            bot.rig.group.visible = false;
-            this.tags++;
-            this.weaponMatchStats[this.weaponId].kills++;
-            if (this.gameMode === 'tdm') {
-              this.teamScoreCyan += 1;
-            }
-            this.hitstopTimer = isHeadshot ? 0.055 : 0.035;
-            soundEngine.playHitMarker(true, isHeadshot);
-            this.killsFeed = [
-              {
-                id: `${now}-${bot.id}`,
-                text: isHeadshot
-                  ? `HEADSHOT · ${bot.nickname}`
-                  : `Tagged ${bot.nickname}`,
-              },
-              ...this.killsFeed.slice(0, 3),
-            ];
-            if (this.isTutorial && bot.policy === 'drone') {
-              this.tutorialDronesHit++;
-              if (this.tutorialDronesHit >= 3) {
-                this.tutorialStep = 3;
-                setTimeout(() => {
-                  if (!this.disposed && this.isTutorial) {
-                    this.callbacks.onTutorialComplete();
-                  }
-                }, 1400);
-              }
-            }
+          const dmgResult = applyIncomingDamageWithSpawnProtection(dmg, bot.spawnProtection, now);
+          bot.spawnProtection = dmgResult.nextState;
+          if (dmgResult.blocked) {
+            soundEngine.playHitMarker(false, false);
           } else {
-            soundEngine.playHitMarker(false, isHeadshot);
+            bot.hp -= dmgResult.damage;
+            bot.hitFlashTimer = 0.09;
+            if (Math.random() < 0.6) bot.strafeSign *= -1;
+            this.hitMarkerMs = isHeadshot ? 260 : 180;
+            this.lastHitZone = hit.hitZone ?? 'body';
+            if (bot.hp <= 0) {
+              bot.alive = false;
+              bot.deaths++;
+              bot.respawnTimer = this.isTutorial ? 999 : 3.2;
+              bot.spawnProtection = { active: false, expiresAtMs: 0 };
+              bot.rig.spawnShieldRing.visible = false;
+              bot.rig.group.visible = false;
+              this.tags++;
+              this.weaponMatchStats[this.weaponId].kills++;
+              if (this.gameMode === 'tdm') {
+                this.teamScoreCyan += 1;
+              }
+              this.hitstopTimer = isHeadshot ? 0.055 : 0.035;
+              soundEngine.playHitMarker(true, isHeadshot);
+              this.killsFeed = [
+                {
+                  id: `${now}-${bot.id}`,
+                  text: isHeadshot
+                    ? `HEADSHOT · ${bot.nickname}`
+                    : `Tagged ${bot.nickname}`,
+                },
+                ...this.killsFeed.slice(0, 3),
+              ];
+              if (this.isTutorial && bot.policy === 'drone') {
+                this.tutorialDronesHit++;
+                if (this.tutorialDronesHit >= 3) {
+                  this.tutorialStep = 3;
+                  setTimeout(() => {
+                    if (!this.disposed && this.isTutorial) {
+                      this.callbacks.onTutorialComplete();
+                    }
+                  }, 1400);
+                }
+              }
+            } else {
+              soundEngine.playHitMarker(false, isHeadshot);
+            }
           }
         }
       }
@@ -2853,12 +2877,20 @@ export class ArenaEngine {
             bot.yaw = sp.yaw;
             bot.hp = bot.maxHp;
             bot.alive = true;
+            bot.spawnProtection = createSpawnProtection(nowMs);
             bot.rig.group.visible = true;
             bot.poseHistory = [];
             bot.lastPoseSampleMs = 0;
           }
         }
         continue;
+      }
+
+      const botShieldActive = isSpawnProtectionActive(bot.spawnProtection, nowMs);
+      bot.rig.spawnShieldRing.visible = botShieldActive;
+      if (botShieldActive) {
+        bot.rig.spawnShieldRing.rotation.z = nowMs * 0.004;
+        bot.rig.spawnShieldRing.position.y = 1.02 + Math.sin(nowMs * 0.008) * 0.14;
       }
 
       if (bot.hitFlashTimer > 0) {
@@ -3048,6 +3080,10 @@ export class ArenaEngine {
         };
         const ray = castLaserRay(origin, dir, dist, map, []);
         if (ray.hitType === 'none') {
+          // Firing immediately switches off bot spawn protection
+          bot.spawnProtection = clearSpawnProtectionOnShot(bot.spawnProtection);
+          bot.rig.spawnShieldRing.visible = false;
+
           const hitTarget = Math.random() < 0.52;
           const endPoint = hitTarget
             ? { x: targetX, y: targetY + 1.2, z: targetZ }
@@ -3060,80 +3096,95 @@ export class ArenaEngine {
 
           if (hitTarget) {
             if (targetBot) {
-              targetBot.hp -= 16;
-              targetBot.hitFlashTimer = 0.08;
-              if (targetBot.hp <= 0) {
-                targetBot.alive = false;
-                targetBot.deaths++;
-                bot.kills++;
-                targetBot.respawnTimer = 3.2;
-                targetBot.rig.group.visible = false;
-                if (this.gameMode === 'tdm') {
-                  if (bot.team === 'cyan') {
-                    this.teamScoreCyan += 1;
-                  } else {
-                    this.teamScoreAmber += 1;
-                  }
-                }
-                this.killsFeed = [
-                  {
-                    id: `${nowMs}-${bot.id}-${targetBot.id}`,
-                    text: `${bot.nickname} → ${targetBot.nickname}`,
-                  },
-                  ...this.killsFeed.slice(0, 3),
-                ];
-              }
-            } else {
-              // Target is the human player (skip if already awaiting respawn)
-              if (!this.isDead) {
-                this.hp -= 12;
-                this.damageFlashMs = 240;
-                this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.22);
-                this.triggerRumble(0.28, 0.4, 90);
-                if (this.hp <= 0) {
-                  this.hp = 0;
-                  this.isDead = true;
-                  this.killCamRemainingMs = KILL_CAM_DURATION_MS;
-                  this.deathRespawnRemainingMs = 0;
-                  this.killCamClip = [
-                    ...bot.poseHistory,
-                    {
-                      t: nowMs / 1000,
-                      attackerX: bot.x,
-                      attackerY: bot.y,
-                      attackerZ: bot.z,
-                      attackerYaw: bot.yaw,
-                      victimX: this.playerPos.x,
-                      victimY: this.playerPos.y,
-                      victimZ: this.playerPos.z,
-                    },
-                  ];
-                  this.killCamBeamOrigin = { ...origin };
-                  this.killCamBeamEnd = { ...endPoint };
-                  this.killCamBeamColor = bot.team === 'cyan' ? '#38bdf8' : '#ef4444';
-                  this.killCamBeamFired = false;
-                  this.killedBy = bot.nickname;
-                  this.deaths++;
+              const botDmg = applyIncomingDamageWithSpawnProtection(16, targetBot.spawnProtection, nowMs);
+              targetBot.spawnProtection = botDmg.nextState;
+              if (!botDmg.blocked) {
+                targetBot.hp -= botDmg.damage;
+                targetBot.hitFlashTimer = 0.08;
+                if (targetBot.hp <= 0) {
+                  targetBot.alive = false;
+                  targetBot.deaths++;
                   bot.kills++;
+                  targetBot.respawnTimer = 3.2;
+                  targetBot.spawnProtection = { active: false, expiresAtMs: 0 };
+                  targetBot.rig.spawnShieldRing.visible = false;
+                  targetBot.rig.group.visible = false;
                   if (this.gameMode === 'tdm') {
-                    this.teamScoreAmber += 1;
+                    if (bot.team === 'cyan') {
+                      this.teamScoreCyan += 1;
+                    } else {
+                      this.teamScoreAmber += 1;
+                    }
                   }
-                  this.isScoped = false;
-                  this.rightMouseDown = false;
-                  this.mouseDown = false;
-                  this.gamepadTriggerFiring = false;
-                  this.isReloading = false;
-                  this.reloadRemainingMs = 0;
-                  document.exitPointerLock?.();
-                  this.triggerRumble(0.85, 0.95, 250);
                   this.killsFeed = [
                     {
-                      id: `${nowMs}-${bot.id}-player`,
-                      text: `${bot.nickname} tagged You`,
+                      id: `${nowMs}-${bot.id}-${targetBot.id}`,
+                      text: `${bot.nickname} → ${targetBot.nickname}`,
                     },
                     ...this.killsFeed.slice(0, 3),
                   ];
-                  this.emitHud(true);
+                }
+              }
+            } else {
+              // Target is the human player (skip if already awaiting respawn or spawn-protected)
+              if (!this.isDead) {
+                const playerDmg = applyIncomingDamageWithSpawnProtection(
+                  12,
+                  this.playerSpawnProtection,
+                  nowMs
+                );
+                this.playerSpawnProtection = playerDmg.nextState;
+                if (!playerDmg.blocked) {
+                  this.hp -= playerDmg.damage;
+                  this.damageFlashMs = 240;
+                  this.cameraTrauma = Math.min(1, this.cameraTrauma + 0.22);
+                  this.triggerRumble(0.28, 0.4, 90);
+                  if (this.hp <= 0) {
+                    this.hp = 0;
+                    this.isDead = true;
+                    this.playerSpawnProtection = { active: false, expiresAtMs: 0 };
+                    this.killCamRemainingMs = KILL_CAM_DURATION_MS;
+                    this.deathRespawnRemainingMs = 0;
+                    this.killCamClip = [
+                      ...bot.poseHistory,
+                      {
+                        t: nowMs / 1000,
+                        attackerX: bot.x,
+                        attackerY: bot.y,
+                        attackerZ: bot.z,
+                        attackerYaw: bot.yaw,
+                        victimX: this.playerPos.x,
+                        victimY: this.playerPos.y,
+                        victimZ: this.playerPos.z,
+                      },
+                    ];
+                    this.killCamBeamOrigin = { ...origin };
+                    this.killCamBeamEnd = { ...endPoint };
+                    this.killCamBeamColor = bot.team === 'cyan' ? '#38bdf8' : '#ef4444';
+                    this.killCamBeamFired = false;
+                    this.killedBy = bot.nickname;
+                    this.deaths++;
+                    bot.kills++;
+                    if (this.gameMode === 'tdm') {
+                      this.teamScoreAmber += 1;
+                    }
+                    this.isScoped = false;
+                    this.rightMouseDown = false;
+                    this.mouseDown = false;
+                    this.gamepadTriggerFiring = false;
+                    this.isReloading = false;
+                    this.reloadRemainingMs = 0;
+                    document.exitPointerLock?.();
+                    this.triggerRumble(0.85, 0.95, 250);
+                    this.killsFeed = [
+                      {
+                        id: `${nowMs}-${bot.id}-player`,
+                        text: `${bot.nickname} tagged You`,
+                      },
+                      ...this.killsFeed.slice(0, 3),
+                    ];
+                    this.emitHud(true);
+                  }
                 }
               }
             }
@@ -3276,6 +3327,9 @@ export class ArenaEngine {
       isKillCam: this.isDead && this.killCamRemainingMs > 0,
       killCamRemainingMs: Math.round(this.killCamRemainingMs),
       deathRespawnRemainingMs: Math.round(this.deathRespawnRemainingMs),
+      spawnProtectionRemainingMs: this.isDead
+        ? 0
+        : Math.round(getSpawnProtectionRemainingMs(this.playerSpawnProtection, performance.now())),
       killedBy: this.killedBy,
       hasGamepad: this.hasGamepad,
       killsFeed: this.killsFeed,

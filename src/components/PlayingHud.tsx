@@ -7,6 +7,7 @@ import {
   Pause,
   RotateCcw,
   Settings as SettingsIcon,
+  ShieldCheck,
   Skull,
   Sparkles,
   Volume2,
@@ -686,24 +687,40 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
       )}
 
       {/* Bottom-Left Shield & Dash Cluster */}
-      <div className="fixed bottom-5 left-5 w-56 rounded-lg border border-white/15 bg-[#070B12]/80 p-3 text-white">
-        <div className="flex items-baseline justify-between">
-          <span className="text-[11px] font-semibold tracking-wider text-slate-400">
-            {t(lang, 'hud.shield')}
-          </span>
-          <span className="hud-numeral text-2xl font-bold leading-none text-white">
-            {hud.hp}
-          </span>
-        </div>
-        <div className="mt-1.5 h-2 w-full overflow-hidden rounded-sm bg-slate-800">
+      <div className="fixed bottom-5 left-5 w-56 space-y-2">
+        {!hud.isDead && hud.spawnProtectionRemainingMs > 0 && (
           <div
-            className="h-full bg-cyan-400 transition-all duration-150"
-            style={{ width: `${(hud.hp / hud.maxHp) * 100}%` }}
-          />
-        </div>
-        <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-          <span>{t(lang, 'hud.dash')}</span>
-          <span className="font-mono text-slate-200">{hud.dashCharge}%</span>
+            data-testid="spawn-protection-badge"
+            className="flex items-center justify-between rounded-lg border border-cyan-400/60 bg-cyan-950/85 px-3 py-1.5 text-xs font-bold tracking-wider text-cyan-200 shadow-lg"
+          >
+            <span className="flex items-center gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5 text-cyan-300" />
+              {t(lang, 'hud.spawnShield')}
+            </span>
+            <span className="font-mono text-cyan-300">
+              {(hud.spawnProtectionRemainingMs / 1000).toFixed(1)}s
+            </span>
+          </div>
+        )}
+        <div className="rounded-lg border border-white/15 bg-[#070B12]/80 p-3 text-white">
+          <div className="flex items-baseline justify-between">
+            <span className="text-[11px] font-semibold tracking-wider text-slate-400">
+              {t(lang, 'hud.shield')}
+            </span>
+            <span className="hud-numeral text-2xl font-bold leading-none text-white">
+              {hud.hp}
+            </span>
+          </div>
+          <div className="mt-1.5 h-2 w-full overflow-hidden rounded-sm bg-slate-800">
+            <div
+              className="h-full bg-cyan-400 transition-all duration-150"
+              style={{ width: `${(hud.hp / hud.maxHp) * 100}%` }}
+            />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+            <span>{t(lang, 'hud.dash')}</span>
+            <span className="font-mono text-slate-200">{hud.dashCharge}%</span>
+          </div>
         </div>
       </div>
 

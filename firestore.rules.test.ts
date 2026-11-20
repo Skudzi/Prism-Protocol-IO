@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-// Verify finalized firestore.rules satisfies Eight Pillars &Dirty Dozen invariants structurally
+// Verify finalized firestore.rules satisfies Eight Pillars & Dirty Dozen invariants structurally
 const rulesText = fs.readFileSync('firestore.rules', 'utf8');
 
 test('firestore.rules includes rules_version = 2 and default-deny safety net', () => {
@@ -25,6 +25,13 @@ test('firestore.rules enforces immutable accountId/createdAt, bounded timestamps
   assert.match(rulesText, /isValidIsoTimestamp\(data\.createdAt\)/);
   assert.match(rulesText, /isParentUserOwner\(userId\)/);
   assert.match(rulesText, /resource\.data\.ownerId == request\.auth\.uid/);
+});
+
+test('firestore.rules validates weaponStats, passSeason fields, and controller settings', () => {
+  assert.match(rulesText, /isValidWeaponStatsMap\(stats\.weaponStats\)/);
+  assert.match(rulesText, /'passSeasonNumber',\s*'passSeasonEndsAt'/);
+  assert.match(rulesText, /'controllerEnabled',\s*'controllerSensitivity'/);
+  assert.match(rulesText, /'controllerDeadzone',\s*'controllerInvertY',\s*'controllerVibration'/);
 });
 
 test('firestore.rules stays under Firestore 10-call regex .matches() limit', () => {

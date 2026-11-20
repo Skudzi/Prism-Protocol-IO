@@ -244,9 +244,13 @@ export const SocialPanel: React.FC<SocialPanelProps> = ({
 interface AccountPanelProps {
   profile: PlayerCloudProfile;
   isAuthenticated: boolean;
+  isGoogleSynced?: boolean;
+  cloudEmail?: string | null;
+  cloudError?: string | null;
   authReady: boolean;
   lang: LanguageCode;
   syncStatus: string;
+  onGoogleSignIn?: () => Promise<{ ok: boolean; error?: string }>;
   onLogin: (
     username: string,
     password: string,
@@ -265,9 +269,13 @@ interface AccountPanelProps {
 export const AccountPanel: React.FC<AccountPanelProps> = ({
   profile,
   isAuthenticated,
+  isGoogleSynced = false,
+  cloudEmail = null,
+  cloudError = null,
   authReady,
   lang,
   syncStatus,
+  onGoogleSignIn,
   onLogin,
   onRegister,
   onUpdatePlatform,
@@ -300,6 +308,20 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
       setErrorMsg(res.error ?? 'Authentication failed');
     } else {
       setPassword('');
+      setStatusMsg(t(lang, 'account.synced'));
+    }
+  };
+
+  const handleGoogleClick = async () => {
+    if (!onGoogleSignIn) return;
+    setErrorMsg(null);
+    setStatusMsg(null);
+    setBusy(true);
+    const res = await onGoogleSignIn();
+    setBusy(false);
+    if (!res.ok && res.error) {
+      setErrorMsg(res.error);
+    } else if (res.ok) {
       setStatusMsg(t(lang, 'account.synced'));
     }
   };
@@ -427,149 +449,191 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
       </div>
 
       {!isAuthenticated ? (
-        <form
-          onSubmit={handleAuthSubmit}
-          className="flex flex-col justify-between rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 p-5 space-y-4"
-        >
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-sm font-bold text-slate-900 dark:text-white">
-                {authMode === 'login' ? t(lang, 'account.login') : t(lang, 'account.register')}
-              </div>
-              <div className="flex gap-1 rounded-md bg-slate-200 dark:bg-slate-800 p-0.5 text-xs">
-                <button
-                  type="button"
-                  data-testid="auth-tab-login"
-                  onClick={() => {
-                    setAuthMode('login');
-                    setErrorMsg(null);
-                  }}
-                  className={`rounded px-2.5 py-1 font-medium cursor-pointer ${
-                    authMode === 'login'
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white'
-                      : 'text-slate-600 dark:text-slate-400'
-                  }`}
-                >
-                  {t(lang, 'account.login')}
-                </button>
-                <button
-                  type="button"
-                  data-testid="auth-tab-register"
-                  onClick={() => {
-                    setAuthMode('register');
-                    setErrorMsg(null);
-                  }}
-                  className={`rounded px-2.5 py-1 font-medium cursor-pointer ${
-                    authMode === 'register'
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white'
-                      : 'text-slate-600 dark:text-slate-400'
-                  }`}
-                >
-                  {t(lang, 'account.login') === 'Sign In' ? 'Register' : t(lang, 'account.register').split(' ')[0]}
-                </button>
-              </div>
-            </div>
-
-            <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
-              {t(lang, 'account.guest')}
-            </p>
-
-            <div>
-              <label
-                htmlFor="acc-username"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
+        <div className="flex flex-col justify-between rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 p-5 space-y-4">
+          {onGoogleSignIn && (
+            <div className="space-y-2 border-b border-slate-200 dark:border-slate-800 pb-4">
+              <button
+                type="button"
+                data-testid="google-signin-btn"
+                disabled={!authReady || busy}
+                onClick={() => void handleGoogleClick()}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white hover:border-cyan-500 hover:bg-slate-100 dark:hover:bg-slate-900 disabled:opacity-50 transition-colors cursor-pointer"
               >
-                Username
-              </label>
-              <input
-                id="acc-username"
-                data-testid="account-username-input"
-                type="text"
-                required
-                minLength={3}
-                maxLength={20}
-                pattern="[a-zA-Z0-9_\-]{3,20}"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. PrismPlayer1"
-                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="acc-password"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
-              >
-                {t(lang, 'account.password')}
-              </label>
-              <input
-                id="acc-password"
-                data-testid="account-password-input"
-                type="password"
-                required
-                minLength={4}
-                maxLength={72}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Min 4 characters"
-                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="acc-platform-auth"
-                className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
-              >
-                {t(lang, 'account.platform')}
-              </label>
-              <select
-                id="acc-platform-auth"
-                value={platform}
-                onChange={(e) => setPlatform(e.target.value as PlatformType)}
-                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
-              >
-                <option value="Web">Web</option>
-                <option value="PC">PC</option>
-                <option value="Console">Console</option>
-                <option value="Mobile">Mobile</option>
-              </select>
-            </div>
-
-            {errorMsg && (
-              <p className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-500">
-                {errorMsg}
+                <Cloud className="h-4 w-4 text-cyan-500" />
+                {t(lang, 'account.googleSignIn')}
+              </button>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                1-click Firestore Cloud Save across all devices, or use Username &amp; Password below.
               </p>
-            )}
-          </div>
+            </div>
+          )}
 
-          <button
-            type="submit"
-            data-testid="account-submit-btn"
-            disabled={!authReady || busy}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50 cursor-pointer"
-          >
-            <Cloud className="h-4 w-4" />
-            {busy
-              ? 'Connecting...'
-              : authMode === 'login'
-                ? t(lang, 'account.login')
-                : t(lang, 'account.register')}
-          </button>
-        </form>
+          <form onSubmit={handleAuthSubmit} className="flex flex-1 flex-col justify-between space-y-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-bold text-slate-900 dark:text-white">
+                  {authMode === 'login' ? t(lang, 'account.login') : t(lang, 'account.register')}
+                </div>
+                <div className="flex gap-1 rounded-md bg-slate-200 dark:bg-slate-800 p-0.5 text-xs">
+                  <button
+                    type="button"
+                    data-testid="auth-tab-login"
+                    onClick={() => {
+                      setAuthMode('login');
+                      setErrorMsg(null);
+                    }}
+                    className={`rounded px-2.5 py-1 font-medium cursor-pointer ${
+                      authMode === 'login'
+                        ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    {t(lang, 'account.login')}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="auth-tab-register"
+                    onClick={() => {
+                      setAuthMode('register');
+                      setErrorMsg(null);
+                    }}
+                    className={`rounded px-2.5 py-1 font-medium cursor-pointer ${
+                      authMode === 'register'
+                        ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    {t(lang, 'account.login') === 'Sign In' ? 'Register' : t(lang, 'account.register').split(' ')[0]}
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                {t(lang, 'account.guest')}
+              </p>
+
+              <div>
+                <label
+                  htmlFor="acc-username"
+                  className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
+                >
+                  Username
+                </label>
+                <input
+                  id="acc-username"
+                  data-testid="account-username-input"
+                  type="text"
+                  required
+                  minLength={3}
+                  maxLength={20}
+                  pattern="[a-zA-Z0-9_\-]{3,20}"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="e.g. PrismPlayer1"
+                  className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="acc-password"
+                  className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
+                >
+                  {t(lang, 'account.password')}
+                </label>
+                <input
+                  id="acc-password"
+                  data-testid="account-password-input"
+                  type="password"
+                  required
+                  minLength={4}
+                  maxLength={72}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Min 4 characters"
+                  className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="acc-platform-auth"
+                  className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
+                >
+                  {t(lang, 'account.platform')}
+                </label>
+                <select
+                  id="acc-platform-auth"
+                  value={platform}
+                  onChange={(e) => setPlatform(e.target.value as PlatformType)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+                >
+                  <option value="Web">Web</option>
+                  <option value="PC">PC</option>
+                  <option value="Console">Console</option>
+                  <option value="Mobile">Mobile</option>
+                </select>
+              </div>
+
+              {(errorMsg || cloudError) && (
+                <p className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-500">
+                  {errorMsg ?? cloudError}
+                </p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              data-testid="account-submit-btn"
+              disabled={!authReady || busy}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50 cursor-pointer"
+            >
+              <Cloud className="h-4 w-4" />
+              {busy
+                ? 'Connecting...'
+                : authMode === 'login'
+                  ? t(lang, 'account.login')
+                  : t(lang, 'account.register')}
+            </button>
+          </form>
+        </div>
       ) : (
         <form
           onSubmit={handleSavePlatform}
           className="flex flex-col justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-5 space-y-4"
         >
           <div className="space-y-3">
-            <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-              {t(lang, 'account.synced')}
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                {t(lang, 'account.synced')}
+              </div>
+              {isGoogleSynced && (
+                <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-300">
+                  Firestore Cloud
+                </span>
+              )}
             </div>
+            {cloudEmail && (
+              <div className="text-xs font-mono text-slate-600 dark:text-slate-300">
+                {cloudEmail}
+              </div>
+            )}
             <p className="text-xs text-slate-600 dark:text-slate-400">
-              All credits, XP, weapon &amp; avatar skins, Battle Pass tiers, settings, and Vault progress are saved locally on this device and synced to your Prism Cloud account.
+              All credits, XP, weapon &amp; avatar skins, Battle Pass tiers, weapon stats, and settings are saved locally on this device and synced to the cloud.
             </p>
+
+            {!isGoogleSynced && onGoogleSignIn && (
+              <button
+                type="button"
+                data-testid="google-signin-btn"
+                disabled={!authReady || busy}
+                onClick={() => void handleGoogleClick()}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-cyan-500/40 bg-white dark:bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-900 disabled:opacity-50 cursor-pointer"
+              >
+                <Cloud className="h-3.5 w-3.5 text-cyan-500" />
+                {t(lang, 'account.googleSignIn')}
+              </button>
+            )}
 
             <div>
               <label
@@ -591,7 +655,9 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
               </select>
             </div>
 
-            {errorMsg && <p className="text-xs font-medium text-rose-500">{errorMsg}</p>}
+            {(errorMsg || cloudError) && (
+              <p className="text-xs font-medium text-rose-500">{errorMsg ?? cloudError}</p>
+            )}
             {statusMsg && <p className="text-xs font-medium text-emerald-500">{statusMsg}</p>}
           </div>
 

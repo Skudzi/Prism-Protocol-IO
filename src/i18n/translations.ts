@@ -63,6 +63,7 @@ const en = {
   'hud.cyanTeam': 'BLUE',
   'hud.amberTeam': 'RED',
   'hud.healRestored': 'SHIELDS RESTORED',
+  'hud.spawnShield': 'SPAWN PROTECTION',
   'hud.minimap': 'RADAR',
 
   'weapon.pulse_carbine.name': 'Pulse Carbine',
@@ -231,6 +232,7 @@ const es: Record<TranslationKey, string> = {
   'hud.cyanTeam': 'AZUL',
   'hud.amberTeam': 'ROJO',
   'hud.healRestored': 'ESCUDOS RESTAURADOS',
+  'hud.spawnShield': 'ESCUDO DE APARICIÓN',
   'hud.minimap': 'RADAR',
 
   'weapon.pulse_carbine.name': 'Carabina de Pulso',
@@ -397,6 +399,7 @@ const sk: Record<TranslationKey, string> = {
   'hud.cyanTeam': 'MODRÍ',
   'hud.amberTeam': 'ČERVENÍ',
   'hud.healRestored': 'ŠTÍTY OBNOVENÉ',
+  'hud.spawnShield': 'OCHRANA PO ZRODENÍ',
   'hud.minimap': 'RADAR',
 
   'weapon.pulse_carbine.name': 'Pulzná Karabína',
@@ -563,6 +566,7 @@ const fr: Record<TranslationKey, string> = {
   'hud.cyanTeam': 'BLEU',
   'hud.amberTeam': 'ROUGE',
   'hud.healRestored': 'BOUCLIERS RESTAURÉS',
+  'hud.spawnShield': 'PROTECTION APPARITION',
   'hud.minimap': 'RADAR',
 
   'weapon.pulse_carbine.name': 'Carabine à Impulsion',
@@ -729,6 +733,7 @@ const ja: Record<TranslationKey, string> = {
   'hud.cyanTeam': 'ブルー',
   'hud.amberTeam': 'レッド',
   'hud.healRestored': 'シールド全回復',
+  'hud.spawnShield': 'スポーン無敵',
   'hud.minimap': 'レーダー',
 
   'weapon.pulse_carbine.name': 'パルスカービン',

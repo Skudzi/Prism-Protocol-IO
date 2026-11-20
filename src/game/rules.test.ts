@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { AVATAR_SKINS, createDefaultProfile, DEFAULT_SETTINGS, MAP_LIST, MAPS, PASS_SEASON_DURATION_MS, WEAPONS, WEAPON_SKINS } from './catalog';
 import {
   applyControllerDeadzone,
+  applyIncomingDamageWithSpawnProtection,
   applyMatchRewards,
   applyTutorialCompletion,
   applyUnderfootJumpVelocity,
@@ -16,13 +17,19 @@ import {
   checkHealOrbPickup,
   checkJumpPadCollision,
   claimBattlePassTier,
+  clearSpawnProtectionOnShot,
   computeAdaptivePerfStep,
+  createSpawnProtection,
   detectLowPerfGpuString,
   getBattlePassCountdown,
   getHealOrbScheduleTimes,
   getKillRankReward,
   getOperatorWeaponBodyStyle,
   getPerfSettingsForTier,
+  getSpawnProtectedDamageMultiplier,
+  getSpawnProtectionRemainingMs,
+  hasProfileCloudDiff,
+  isSpawnProtectionActive,
   MAX_MATCH_CREDITS,
   MAX_MATCH_XP,
   mergeLocalAndCloudProfiles,
@@ -34,6 +41,7 @@ import {
   sampleKillCamClip,
   shouldAutoReload,
   sortLeaderboardEntries,
+  SPAWN_PROTECTION_DURATION_MS,
   syncBattlePassSeason,
   TUTORIAL_REWARD_CREDITS,
   TUTORIAL_REWARD_XP,
@@ -950,5 +958,55 @@ test('Invisible adaptive performance tiering targets Intel UHD / low-core laptop
   assert.equal(clampedMin.tier, 1);
 });
 
+test('Spawn protection blocks 100% of damage for 3 seconds OR until first shot, whichever occurs first', () => {
+  assert.equal(SPAWN_PROTECTION_DURATION_MS, 3000);
+  const spawnedAt = 10_000;
+  let shield = createSpawnProtection(spawnedAt);
 
+  // Immediately after spawn & up to 2.999s: active, -100% damage (0 damage taken)
+  assert.equal(isSpawnProtectionActive(shield, spawnedAt), true);
+  assert.equal(getSpawnProtectionRemainingMs(shield, spawnedAt + 1200), 1800);
+  assert.equal(getSpawnProtectedDamageMultiplier(shield, spawnedAt + 2999), 0);
+  const blockedHit = applyIncomingDamageWithSpawnProtection(74, shield, spawnedAt + 1500);
+  assert.equal(blockedHit.blocked, true);
+  assert.equal(blockedHit.damage, 0);
 
+  // Condition 1: 3 seconds elapsed -> switches off automatically
+  assert.equal(isSpawnProtectionActive(shield, spawnedAt + 3000), false);
+  assert.equal(getSpawnProtectionRemainingMs(shield, spawnedAt + 3000), 0);
+  assert.equal(getSpawnProtectedDamageMultiplier(shield, spawnedAt + 3000), 1);
+  const expiredHit = applyIncomingDamageWithSpawnProtection(74, shield, spawnedAt + 3000);
+  assert.equal(expiredHit.blocked, false);
+  assert.equal(expiredHit.damage, 74);
+
+  // Condition 2: Firing first shot before 3 seconds immediately switches protection off
+  shield = createSpawnProtection(20_000);
+  assert.equal(isSpawnProtectionActive(shield, 20_250), true);
+  shield = clearSpawnProtectionOnShot(shield);
+  assert.equal(isSpawnProtectionActive(shield, 20_250), false);
+  assert.equal(getSpawnProtectionRemainingMs(shield, 20_250), 0);
+  const afterShotHit = applyIncomingDamageWithSpawnProtection(22, shield, 20_250);
+  assert.equal(afterShotHit.blocked, false);
+  assert.equal(afterShotHit.damage, 22);
+});
+
+test('hasProfileCloudDiff detects Battle Pass, loadout, weapon stats, and settings changes', () => {
+  const a = createDefaultProfile('CloudSyncUser');
+  const b = createDefaultProfile('CloudSyncUser');
+  assert.equal(hasProfileCloudDiff(a, b), false);
+
+  const withBpXp = { ...b, battlePassXp: 25 };
+  assert.equal(hasProfileCloudDiff(a, withBpXp), true);
+
+  const withWeaponKill = {
+    ...b,
+    stats: {
+      ...b.stats,
+      weaponStats: {
+        ...b.stats.weaponStats!,
+        pulse_carbine: { kills: 1, shotsFired: 10, shotsHit: 5 },
+      },
+    },
+  };
+  assert.equal(hasProfileCloudDiff(a, withWeaponKill), true);
+});

@@ -1,5 +1,28 @@
 {
   "entities": {
+    "WeaponStatEntry": {
+      "title": "WeaponStatEntry",
+      "description": "Cumulative kills and shot accuracy counters for a single weapon.",
+      "type": "object",
+      "properties": {
+        "kills": { "type": "number", "description": "Total eliminations with this weapon" },
+        "shotsFired": { "type": "number", "description": "Total shots fired with this weapon" },
+        "shotsHit": { "type": "number", "description": "Total shots landed with this weapon" }
+      },
+      "required": ["kills", "shotsFired", "shotsHit"]
+    },
+    "WeaponStatsMap": {
+      "title": "WeaponStatsMap",
+      "description": "Per-weapon combat stats across all four arena weapons.",
+      "type": "object",
+      "properties": {
+        "pulse_carbine": { "$ref": "WeaponStatEntry" },
+        "volt_scatter": { "$ref": "WeaponStatEntry" },
+        "helios_rail": { "$ref": "WeaponStatEntry" },
+        "arc_repeater": { "$ref": "WeaponStatEntry" }
+      },
+      "required": ["pulse_carbine", "volt_scatter", "helios_rail", "arc_repeater"]
+    },
     "PlayerStats": {
       "title": "PlayerStats",
       "description": "Cumulative combat statistics for a Prism Protocol player.",
@@ -10,13 +33,14 @@
         "tags": { "type": "number", "description": "Total opponent eliminations" },
         "deaths": { "type": "number", "description": "Total times tagged" },
         "shotsFired": { "type": "number", "description": "Total laser shots fired" },
-        "shotsHit": { "type": "number", "description": "Total laser shots landed" }
+        "shotsHit": { "type": "number", "description": "Total laser shots landed" },
+        "weaponStats": { "$ref": "WeaponStatsMap" }
       },
-      "required": ["matchesPlayed", "wins", "tags", "deaths", "shotsFired", "shotsHit"]
+      "required": ["matchesPlayed", "wins", "tags", "deaths", "shotsFired", "shotsHit", "weaponStats"]
     },
     "PlayerSettings": {
       "title": "PlayerSettings",
-      "description": "Persisted graphics, display, audio, and control preferences.",
+      "description": "Persisted graphics, display, audio, controller, and localization preferences.",
       "type": "object",
       "properties": {
         "graphicsQuality": { "type": "string", "enum": ["low", "medium", "high", "ultra"] },
@@ -31,6 +55,11 @@
         "particlesEnabled": { "type": "boolean" },
         "audioEnabled": { "type": "boolean" },
         "masterVolume": { "type": "number" },
+        "controllerEnabled": { "type": "boolean" },
+        "controllerSensitivity": { "type": "number" },
+        "controllerDeadzone": { "type": "number" },
+        "controllerInvertY": { "type": "boolean" },
+        "controllerVibration": { "type": "boolean" },
         "darkMode": { "type": "boolean" },
         "language": { "type": "string", "enum": ["en", "es", "sk", "fr", "ja"] },
         "crossPlatformEnabled": { "type": "boolean" }
@@ -48,6 +77,11 @@
         "particlesEnabled",
         "audioEnabled",
         "masterVolume",
+        "controllerEnabled",
+        "controllerSensitivity",
+        "controllerDeadzone",
+        "controllerInvertY",
+        "controllerVibration",
         "darkMode",
         "language",
         "crossPlatformEnabled"
@@ -112,6 +146,8 @@
         "xp": { "type": "number" },
         "battlePassXp": { "type": "number" },
         "battlePassPremium": { "type": "boolean" },
+        "passSeasonNumber": { "type": "number" },
+        "passSeasonEndsAt": { "type": "string", "format": "date-time", "maxLength": 64 },
         "claimedFreeTiers": { "type": "array" },
         "claimedPremiumTiers": { "type": "array" },
         "unlockedWeaponSkins": { "type": "array" },
@@ -147,6 +183,8 @@
         "xp",
         "battlePassXp",
         "battlePassPremium",
+        "passSeasonNumber",
+        "passSeasonEndsAt",
         "claimedFreeTiers",
         "claimedPremiumTiers",
         "unlockedWeaponSkins",
