@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Skull,
   Sparkles,
+  Users,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -223,9 +224,7 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
             </div>
           </div>
 
-          {matchSummary.gameMode === 'tdm' &&
-            matchSummary.leaderboard &&
-            matchSummary.leaderboard.length > 0 && (
+          {matchSummary.leaderboard && matchSummary.leaderboard.length > 0 && (
               <div
                 data-testid="tdm-leaderboard"
                 className="mt-4 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70"
@@ -244,16 +243,19 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
                   </thead>
                   <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800/70">
                     {matchSummary.leaderboard.map((entry, idx) => {
-                      const isAlly = entry.team === 'cyan';
+                      const isTdm = matchSummary.gameMode === 'tdm';
+                      const isAlly = isTdm ? entry.team === 'cyan' : entry.isLocalPlayer;
                       return (
                         <tr
                           key={entry.id}
                           className={
                             entry.isLocalPlayer
                               ? 'bg-blue-500/10 font-semibold'
-                              : isAlly
-                              ? 'bg-blue-500/[0.03]'
-                              : 'bg-rose-500/[0.04]'
+                              : isTdm
+                              ? isAlly
+                                ? 'bg-blue-500/[0.03]'
+                                : 'bg-rose-500/[0.04]'
+                              : ''
                           }
                         >
                           <td className="px-3.5 py-2 font-mono text-slate-500 dark:text-slate-400">
@@ -263,7 +265,13 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
                             <div className="flex items-center gap-2">
                               <span
                                 className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-                                  isAlly ? 'bg-blue-500' : 'bg-rose-500'
+                                  isTdm
+                                    ? isAlly
+                                      ? 'bg-blue-500'
+                                      : 'bg-rose-500'
+                                    : entry.isLocalPlayer
+                                    ? 'bg-cyan-500'
+                                    : 'bg-amber-500'
                                 }`}
                               />
                               <span className="text-slate-900 dark:text-slate-100">
@@ -592,6 +600,16 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
         </div>
       )}
 
+      {/* Subtle Hold-Tab & Players Online pill below top-center timer */}
+      <div className="fixed left-1/2 top-[76px] -translate-x-1/2 flex items-center gap-2 rounded bg-[#070B12]/75 px-2.5 py-0.5 text-[10px] font-semibold tracking-wider text-slate-300 border border-white/10">
+        <span>{t(lang, 'hud.tabScoreboardHint')}</span>
+        <span className="text-slate-500">·</span>
+        <span className="inline-flex items-center gap-1 text-emerald-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          {t(lang, 'hud.playersOnline')}: {hud.playersOnlineCount}
+        </span>
+      </div>
+
       {/* Top-Right Compact Utility Controls (positioned cleanly below FPS counter) */}
       <div className="pointer-events-auto fixed right-4 top-9 flex items-center gap-2">
         <button
@@ -905,6 +923,110 @@ export const PlayingHud: React.FC<PlayingHudProps> = ({
                 ? `${t(lang, 'cta.respawn')} (${Math.ceil(hud.deathRespawnRemainingMs / 1000)}s)`
                 : t(lang, 'cta.respawn')}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Hold-Tab Live Scoreboard & Players Online Overlay */}
+      {hud.scoreboardHeld && (
+        <div
+          data-testid="tab-scoreboard"
+          className="fixed inset-0 z-30 flex items-center justify-center bg-black/55 p-4"
+        >
+          <div className="w-full max-w-2xl overflow-hidden rounded-xl border border-cyan-500/40 bg-[#070B12]/95 text-white shadow-2xl">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-3.5">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-cyan-400">
+                  {t(lang, mapDef.nameKey as Parameters<typeof t>[1])} ·{' '}
+                  {hud.gameMode === 'tdm' ? t(lang, 'mode.tdm') : t(lang, 'mode.ffa')}
+                </div>
+                <h3 className="text-base font-bold text-white">
+                  {t(lang, 'match.leaderboard')}
+                </h3>
+              </div>
+
+              <div
+                data-testid="players-online-count"
+                className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300"
+              >
+                <Users className="h-3.5 w-3.5" />
+                <span>
+                  {t(lang, 'hud.playersOnline')}: {hud.playersOnlineCount}
+                </span>
+              </div>
+            </div>
+
+            <div className="max-h-[60vh] overflow-y-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-white/10 text-[11px] text-slate-400">
+                  <tr>
+                    <th className="px-4 py-2.5 font-semibold">#</th>
+                    <th className="px-4 py-2.5 font-semibold">{t(lang, 'match.player')}</th>
+                    <th className="px-4 py-2.5 text-right font-semibold">{t(lang, 'match.kills')}</th>
+                    <th className="px-4 py-2.5 text-right font-semibold">{t(lang, 'match.deaths')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {hud.scoreboardEntries.map((entry, idx) => {
+                    const isTdm = hud.gameMode === 'tdm';
+                    const isAlly = isTdm ? entry.team === 'cyan' : entry.isLocalPlayer;
+                    return (
+                      <tr
+                        key={entry.id}
+                        className={
+                          entry.isLocalPlayer
+                            ? 'bg-cyan-500/15 font-semibold'
+                            : isTdm
+                            ? isAlly
+                              ? 'bg-blue-500/[0.06]'
+                              : 'bg-rose-500/[0.06]'
+                            : ''
+                        }
+                      >
+                        <td className="px-4 py-2.5 font-mono text-slate-400">{idx + 1}</td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                                isTdm
+                                  ? isAlly
+                                    ? 'bg-blue-500'
+                                    : 'bg-rose-500'
+                                  : entry.isLocalPlayer
+                                  ? 'bg-cyan-400'
+                                  : 'bg-amber-400'
+                              }`}
+                            />
+                            <span className="text-slate-100">{entry.nickname}</span>
+                            {entry.isLocalPlayer && (
+                              <span className="rounded bg-cyan-500/25 px-1.5 py-0.5 text-[10px] font-bold text-cyan-300">
+                                {t(lang, 'match.you')}
+                              </span>
+                            )}
+                            {entry.online && !entry.isLocalPlayer && (
+                              <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300">
+                                {t(lang, 'match.onlineStatus')}
+                              </span>
+                            )}
+                            {entry.isBot && (
+                              <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">
+                                {t(lang, 'match.bot')}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold tabular-nums text-white">
+                          {entry.kills}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono tabular-nums text-slate-400">
+                          {entry.deaths}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

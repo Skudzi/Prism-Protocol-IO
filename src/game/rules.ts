@@ -1,22 +1,33 @@
 import {
   AVATAR_SKINS,
   BATTLE_PASS_TIERS,
+  CHEST_CATALOG,
+  createDefaultEquippedWeaponSkins,
   createDefaultWeaponStats,
   MAP_LIST,
   MAPS,
   PASS_SEASON_DURATION_MS,
+  RARITY_META,
+  RARITY_ORDER,
   WEAPON_SKINS,
 } from './catalog';
 import {
   AvatarSkinDef,
+  ChestDef,
+  ChestId,
+  ChestOpenResult,
+  GameMode,
   HealOrbState,
   MapDef,
   MapId,
   MapObstacle,
   MatchLeaderboardEntry,
   MatchSummary,
+  MatchmakingRoomInfo,
   PlayerCloudProfile,
+  SkinRarity,
   WeaponId,
+  WeaponSkinDef,
   WeaponStatsEntry,
 } from './types';
 
@@ -87,15 +98,84 @@ export function applyUnderfootJumpVelocity(currentVelY: number): number {
 }
 
 export function pickRandomMapId(
-  excludeMapId?: MapId,
+  excludeMapId?: MapId | MapId[],
   rng: () => number = Math.random
 ): MapId {
-  const pool = excludeMapId
-    ? MAP_LIST.filter((m) => m.id !== excludeMapId)
-    : MAP_LIST;
+  const excludedSet = new Set<MapId>(
+    Array.isArray(excludeMapId) ? excludeMapId : excludeMapId ? [excludeMapId] : []
+  );
+  const pool =
+    excludedSet.size > 0 ? MAP_LIST.filter((m) => !excludedSet.has(m.id)) : MAP_LIST;
   const candidates = pool.length > 0 ? pool : MAP_LIST;
   const idx = Math.min(candidates.length - 1, Math.floor(rng() * candidates.length));
   return candidates[idx].id;
+}
+
+export const MAX_PLAYERS_PER_ROOM = 12;
+
+export interface ActiveMatchRoomState {
+  roomCode: string;
+  mode: GameMode;
+  mapId: MapId;
+  playerCount: number;
+}
+
+export function allocateMatchmakingRoom(
+  activeRooms: ActiveMatchRoomState[],
+  mode: GameMode,
+  options?: {
+    maxPlayers?: number;
+    excludeRoomCode?: string;
+    excludeMapIds?: MapId[];
+    rng?: () => number;
+    nextRoomCode?: (mode: GameMode, index: number) => string;
+  }
+): MatchmakingRoomInfo {
+  const maxPlayers = Math.max(1, options?.maxPlayers ?? MAX_PLAYERS_PER_ROOM);
+  const rng = options?.rng ?? Math.random;
+
+  const sameModeRooms = activeRooms.filter((r) => r.mode === mode);
+  const joinable = sameModeRooms.find(
+    (r) => r.roomCode !== options?.excludeRoomCode && r.playerCount < maxPlayers
+  );
+
+  if (joinable) {
+    return {
+      roomCode: joinable.roomCode,
+      mode,
+      mapId: joinable.mapId,
+      playerCount: joinable.playerCount,
+      maxPlayers,
+      isNewRoom: false,
+    };
+  }
+
+  const usedMapIds = new Set<MapId>([
+    ...sameModeRooms.map((r) => r.mapId),
+    ...(options?.excludeMapIds ?? []),
+  ]);
+  const mapId = pickRandomMapId(Array.from(usedMapIds), rng);
+  const prefix = mode === 'tdm' ? 'TDM' : 'FFA';
+  const existingCodes = new Set(activeRooms.map((r) => r.roomCode));
+  let idx = sameModeRooms.length + 1;
+  let roomCode = options?.nextRoomCode
+    ? options.nextRoomCode(mode, idx)
+    : `${prefix}-${idx}`;
+  while (existingCodes.has(roomCode)) {
+    idx += 1;
+    roomCode = options?.nextRoomCode
+      ? options.nextRoomCode(mode, idx)
+      : `${prefix}-${idx}`;
+  }
+
+  return {
+    roomCode,
+    mode,
+    mapId,
+    playerCount: 0,
+    maxPlayers,
+    isNewRoom: true,
+  };
 }
 
 export function checkJumpPadCollision(
@@ -447,18 +527,232 @@ export function getBattlePassTier(battlePassXp: number): number {
   return reached;
 }
 
+export function getChestPoolForRarity(
+  chest: ChestDef,
+  rarity: SkinRarity
+): WeaponSkinDef[] {
+  if ((chest.rarityChances[rarity] ?? 0) <= 0) return [];
+  if (rarity === 'legendary' && chest.featuredLegendarySkinId) {
+    const featured = WEAPON_SKINS.find((s) => s.id === chest.featuredLegendarySkinId);
+    return featured ? [featured] : [];
+  }
+  return WEAPON_SKINS.filter(
+    (s) => s.chestEligible !== false && s.rarity === rarity
+  );
+}
+
+export function getChestRarityPercentages(
+  chestId: ChestId
+): Array<{ rarity: SkinRarity; chancePct: number }> {
+  const chest = CHEST_CATALOG[chestId];
+  return RARITY_ORDER.map((rarity) => ({
+    rarity,
+    chancePct: Number((chest.rarityChances[rarity] ?? 0).toFixed(2)),
+  }));
+}
+
+export function getChestWeaponPercentages(
+  chestId: ChestId
+): Record<WeaponId, number> {
+  const chest = CHEST_CATALOG[chestId];
+  const totals: Record<WeaponId, number> = {
+    pulse_carbine: 0,
+    volt_scatter: 0,
+    helios_rail: 0,
+    arc_repeater: 0,
+  };
+
+  for (const rarity of RARITY_ORDER) {
+    const tierPct = chest.rarityChances[rarity] ?? 0;
+    if (tierPct <= 0) continue;
+    const pool = getChestPoolForRarity(chest, rarity);
+    const totalWeight = pool.reduce((sum, s) => sum + Math.max(1, s.dropWeight ?? 10), 0);
+    if (totalWeight <= 0) continue;
+    for (const skin of pool) {
+      const w = Math.max(1, skin.dropWeight ?? 10);
+      totals[skin.signatureWeapon] += tierPct * (w / totalWeight);
+    }
+  }
+
+  return {
+    pulse_carbine: Number(totals.pulse_carbine.toFixed(1)),
+    volt_scatter: Number(totals.volt_scatter.toFixed(1)),
+    helios_rail: Number(totals.helios_rail.toFixed(1)),
+    arc_repeater: Number(totals.arc_repeater.toFixed(1)),
+  };
+}
+
+export function rollChestOpen(
+  profile: PlayerCloudProfile,
+  chestId: ChestId,
+  rng: () => number = Math.random
+): ChestOpenResult {
+  const chest = CHEST_CATALOG[chestId];
+  if (!chest) {
+    return { ok: false, profile, chestId, reason: 'Chest not found' };
+  }
+  if (profile.credits < chest.price) {
+    return { ok: false, profile, chestId, reason: 'Insufficient credits' };
+  }
+
+  const totalChance = RARITY_ORDER.reduce(
+    (acc, r) => acc + Math.max(0, chest.rarityChances[r] ?? 0),
+    0
+  );
+  const roll = Math.min(totalChance - 1e-9, Math.max(0, rng() * totalChance));
+  let cumulative = 0;
+  let pickedRarity: SkinRarity = 'common';
+  for (const r of RARITY_ORDER) {
+    const pct = Math.max(0, chest.rarityChances[r] ?? 0);
+    if (pct <= 0) continue;
+    cumulative += pct;
+    if (roll < cumulative) {
+      pickedRarity = r;
+      break;
+    }
+  }
+
+  const pool = getChestPoolForRarity(chest, pickedRarity);
+  if (pool.length === 0) {
+    return { ok: false, profile, chestId, reason: 'No skins available in chest pool' };
+  }
+
+  const totalWeight = pool.reduce((sum, s) => sum + Math.max(1, s.dropWeight ?? 10), 0);
+  const itemRoll = Math.min(totalWeight - 1e-9, Math.max(0, rng() * totalWeight));
+  let weightAcc = 0;
+  let droppedSkin = pool[pool.length - 1];
+  for (const s of pool) {
+    weightAcc += Math.max(1, s.dropWeight ?? 10);
+    if (itemRoll < weightAcc) {
+      droppedSkin = s;
+      break;
+    }
+  }
+
+  const alreadyOwned = profile.unlockedWeaponSkins.includes(droppedSkin.id);
+  const refundCredits = alreadyOwned ? RARITY_META[droppedSkin.rarity].salvageCredits : 0;
+  const nextUnlocked = alreadyOwned
+    ? [...profile.unlockedWeaponSkins]
+    : [...profile.unlockedWeaponSkins, droppedSkin.id];
+
+  return {
+    ok: true,
+    chestId,
+    skin: droppedSkin,
+    isDuplicate: alreadyOwned,
+    refundCredits,
+    profile: {
+      ...profile,
+      credits: profile.credits - chest.price + refundCredits,
+      unlockedWeaponSkins: nextUnlocked,
+      lastSyncedAt: new Date().toISOString(),
+    },
+  };
+}
+
+const VALID_WEAPON_ID_SET = new Set<WeaponId>([
+  'pulse_carbine',
+  'volt_scatter',
+  'helios_rail',
+  'arc_repeater',
+]);
+
+export function normalizeEquippedWeaponSkins(
+  raw?: Partial<Record<WeaponId, string>> | null,
+  fallbackSkinId = 'cobalt_standard',
+  activeWeaponId: WeaponId = 'pulse_carbine'
+): Record<WeaponId, string> {
+  const result = createDefaultEquippedWeaponSkins();
+  const validSkinIds = new Set(WEAPON_SKINS.map((s) => s.id));
+  let hasAnySlot = false;
+
+  if (raw && typeof raw === 'object') {
+    for (const wId of ['pulse_carbine', 'volt_scatter', 'helios_rail', 'arc_repeater'] as WeaponId[]) {
+      const candidate = raw[wId];
+      if (typeof candidate === 'string' && validSkinIds.has(candidate)) {
+        result[wId] = candidate;
+        hasAnySlot = true;
+      }
+    }
+  }
+
+  // Legacy migration: preserve single equippedWeaponSkinId onto its signature weapon and active weapon
+  if (!hasAnySlot && typeof fallbackSkinId === 'string' && fallbackSkinId !== 'cobalt_standard' && validSkinIds.has(fallbackSkinId)) {
+    const fallbackDef = WEAPON_SKINS.find((s) => s.id === fallbackSkinId);
+    if (fallbackDef) {
+      result[fallbackDef.signatureWeapon] = fallbackSkinId;
+    }
+    if (VALID_WEAPON_ID_SET.has(activeWeaponId)) {
+      result[activeWeaponId] = fallbackSkinId;
+    }
+  }
+
+  return result;
+}
+
+export function equipWeaponSkin(
+  profile: PlayerCloudProfile,
+  skinId: string,
+  targetWeaponId?: WeaponId
+): { ok: boolean; profile: PlayerCloudProfile; reason?: string } {
+  const skin = WEAPON_SKINS.find((s) => s.id === skinId);
+  if (!skin) return { ok: false, profile, reason: 'Item not found' };
+  if (!profile.unlockedWeaponSkins.includes(skinId)) {
+    return { ok: false, profile, reason: 'Skin not unlocked' };
+  }
+  const slotWeapon: WeaponId =
+    targetWeaponId && VALID_WEAPON_ID_SET.has(targetWeaponId)
+      ? targetWeaponId
+      : skin.signatureWeapon;
+  const nextSlots = {
+    ...normalizeEquippedWeaponSkins(
+      profile.equippedWeaponSkins,
+      profile.equippedWeaponSkinId,
+      profile.equippedWeaponId
+    ),
+    [slotWeapon]: skinId,
+  };
+  return {
+    ok: true,
+    profile: {
+      ...profile,
+      equippedWeaponSkins: nextSlots,
+      equippedWeaponSkinId: nextSlots[profile.equippedWeaponId] ?? skinId,
+    },
+  };
+}
+
 export function purchaseStoreItem(
   profile: PlayerCloudProfile,
   itemType: 'weapon_skin' | 'avatar_skin',
-  itemId: string
+  itemId: string,
+  targetWeaponId?: WeaponId
 ): { ok: boolean; profile: PlayerCloudProfile; reason?: string } {
   if (itemType === 'weapon_skin') {
     const skin = WEAPON_SKINS.find((s) => s.id === itemId);
     if (!skin) return { ok: false, profile, reason: 'Item not found' };
+    const slotWeapon: WeaponId =
+      targetWeaponId && VALID_WEAPON_ID_SET.has(targetWeaponId)
+        ? targetWeaponId
+        : skin.signatureWeapon;
+    const currentSlots = normalizeEquippedWeaponSkins(
+      profile.equippedWeaponSkins,
+      profile.equippedWeaponSkinId,
+      profile.equippedWeaponId
+    );
+    const nextSlots = {
+      ...currentSlots,
+      [slotWeapon]: itemId,
+    };
+
     if (profile.unlockedWeaponSkins.includes(itemId)) {
       return {
         ok: true,
-        profile: { ...profile, equippedWeaponSkinId: itemId },
+        profile: {
+          ...profile,
+          equippedWeaponSkins: nextSlots,
+          equippedWeaponSkinId: nextSlots[profile.equippedWeaponId] ?? itemId,
+        },
       };
     }
     if (skin.unlockSource !== 'store') {
@@ -473,7 +767,8 @@ export function purchaseStoreItem(
         ...profile,
         credits: profile.credits - skin.price,
         unlockedWeaponSkins: [...profile.unlockedWeaponSkins, itemId],
-        equippedWeaponSkinId: itemId,
+        equippedWeaponSkins: nextSlots,
+        equippedWeaponSkinId: nextSlots[profile.equippedWeaponId] ?? itemId,
       },
     };
   }
@@ -940,10 +1235,43 @@ export function mergeLocalAndCloudProfiles(
     ? cloud.passSeasonEndsAt ?? local.passSeasonEndsAt
     : local.passSeasonEndsAt ?? cloud.passSeasonEndsAt;
 
+  const cleanPrimaryNick = String(primary.nickname || '').trim();
+  const cleanCloudNick = String(cloud.nickname || '').trim();
+  const resolvedNickname =
+    cleanPrimaryNick.length >= 3 && cleanPrimaryNick.length <= 20
+      ? cleanPrimaryNick
+      : cleanCloudNick.length >= 3 && cleanCloudNick.length <= 20
+      ? cleanCloudNick
+      : 'PrismPlayer';
+
+  const mergedUnlockedWeaponSkins = Array.from(
+    new Set([...cloud.unlockedWeaponSkins, ...local.unlockedWeaponSkins])
+  );
+  const unlockedSkinSet = new Set(mergedUnlockedWeaponSkins);
+  const secondary = localNewer ? cloud : local;
+  const primarySlots = normalizeEquippedWeaponSkins(
+    primary.equippedWeaponSkins,
+    primary.equippedWeaponSkinId,
+    primary.equippedWeaponId
+  );
+  const secondarySlots = normalizeEquippedWeaponSkins(
+    secondary.equippedWeaponSkins,
+    secondary.equippedWeaponSkinId,
+    secondary.equippedWeaponId
+  );
+  const mergedWeaponSkins = createDefaultEquippedWeaponSkins();
+  for (const wId of WEAPON_IDS) {
+    if (unlockedSkinSet.has(primarySlots[wId])) {
+      mergedWeaponSkins[wId] = primarySlots[wId];
+    } else if (unlockedSkinSet.has(secondarySlots[wId])) {
+      mergedWeaponSkins[wId] = secondarySlots[wId];
+    }
+  }
+
   return {
     ...primary,
     accountId: cloud.accountId,
-    nickname: cloud.nickname,
+    nickname: resolvedNickname,
     credits: primary.credits,
     xp: Math.max(local.xp, cloud.xp),
     passSeasonNumber: newerSeason,
@@ -972,12 +1300,12 @@ export function mergeLocalAndCloudProfiles(
       : Array.from(
           new Set([...cloud.claimedPremiumTiers, ...local.claimedPremiumTiers])
         ).sort((a, b) => a - b),
-    unlockedWeaponSkins: Array.from(
-      new Set([...cloud.unlockedWeaponSkins, ...local.unlockedWeaponSkins])
-    ),
+    unlockedWeaponSkins: mergedUnlockedWeaponSkins,
     unlockedAvatarSkins: Array.from(
       new Set([...cloud.unlockedAvatarSkins, ...local.unlockedAvatarSkins])
     ),
+    equippedWeaponSkins: mergedWeaponSkins,
+    equippedWeaponSkinId: mergedWeaponSkins[primary.equippedWeaponId] ?? primary.equippedWeaponSkinId,
     tutorialCompleted: local.tutorialCompleted || cloud.tutorialCompleted,
     easterEggUnlocked: local.easterEggUnlocked || cloud.easterEggUnlocked,
     stats: {
@@ -1264,6 +1592,10 @@ export function hasProfileCloudDiff(
   a: PlayerCloudProfile,
   b: PlayerCloudProfile
 ): boolean {
+  const seasonEndDiffMs = Math.abs(
+    (Date.parse(a.passSeasonEndsAt || '') || 0) -
+      (Date.parse(b.passSeasonEndsAt || '') || 0)
+  );
   if (
     a.nickname !== b.nickname ||
     a.platform !== b.platform ||
@@ -1272,7 +1604,8 @@ export function hasProfileCloudDiff(
     a.battlePassXp !== b.battlePassXp ||
     a.battlePassPremium !== b.battlePassPremium ||
     a.passSeasonNumber !== b.passSeasonNumber ||
-    a.passSeasonEndsAt !== b.passSeasonEndsAt ||
+    Boolean(a.passSeasonEndsAt) !== Boolean(b.passSeasonEndsAt) ||
+    seasonEndDiffMs > 1000 ||
     a.equippedWeaponId !== b.equippedWeaponId ||
     a.equippedWeaponSkinId !== b.equippedWeaponSkinId ||
     a.equippedAvatarSkinId !== b.equippedAvatarSkinId ||
@@ -1300,6 +1633,22 @@ export function hasProfileCloudDiff(
       aWeapons[id].shotsFired !== bWeapons[id].shotsFired ||
       aWeapons[id].shotsHit !== bWeapons[id].shotsHit
     ) {
+      return true;
+    }
+  }
+
+  const aSkins = normalizeEquippedWeaponSkins(
+    a.equippedWeaponSkins,
+    a.equippedWeaponSkinId,
+    a.equippedWeaponId
+  );
+  const bSkins = normalizeEquippedWeaponSkins(
+    b.equippedWeaponSkins,
+    b.equippedWeaponSkinId,
+    b.equippedWeaponId
+  );
+  for (const id of WEAPON_IDS) {
+    if (aSkins[id] !== bSkins[id]) {
       return true;
     }
   }

@@ -1,15 +1,20 @@
 import {
   AvatarSkinDef,
   BattlePassTier,
+  ChestDef,
+  ChestId,
   GameSettings,
   Keybinds,
   MapDef,
   MapId,
   MapObstacle,
   PlayerCloudProfile,
+  RarityMetaDef,
+  SkinRarity,
   WeaponDef,
   WeaponId,
   WeaponSkinDef,
+  WeaponSkinPattern,
 } from './types';
 
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
@@ -98,10 +103,72 @@ export const WEAPON_LIST: WeaponDef[] = [
   WEAPONS.arc_repeater,
 ];
 
-export const WEAPON_SKINS: WeaponSkinDef[] = [
+export const RARITY_ORDER: SkinRarity[] = [
+  'common',
+  'uncommon',
+  'rare',
+  'epic',
+  'mythic',
+  'legendary',
+];
+
+export const RARITY_META: Record<SkinRarity, RarityMetaDef> = {
+  common: {
+    id: 'common',
+    label: 'Common',
+    colorHex: '#cbd5e1',
+    badgeBg: 'rgba(148, 163, 184, 0.16)',
+    borderHex: '#94a3b8',
+    salvageCredits: 150,
+  },
+  uncommon: {
+    id: 'uncommon',
+    label: 'Uncommon',
+    colorHex: '#22c55e',
+    badgeBg: 'rgba(34, 197, 94, 0.16)',
+    borderHex: '#22c55e',
+    salvageCredits: 250,
+  },
+  rare: {
+    id: 'rare',
+    label: 'Rare',
+    colorHex: '#3b82f6',
+    badgeBg: 'rgba(59, 130, 246, 0.16)',
+    borderHex: '#3b82f6',
+    salvageCredits: 450,
+  },
+  epic: {
+    id: 'epic',
+    label: 'Epic',
+    colorHex: '#d946ef',
+    badgeBg: 'rgba(217, 70, 239, 0.16)',
+    borderHex: '#d946ef',
+    salvageCredits: 750,
+  },
+  mythic: {
+    id: 'mythic',
+    label: 'Mythic',
+    colorHex: '#ef4444',
+    badgeBg: 'rgba(239, 68, 68, 0.16)',
+    borderHex: '#ef4444',
+    salvageCredits: 1100,
+  },
+  legendary: {
+    id: 'legendary',
+    label: 'Legendary',
+    colorHex: '#eab308',
+    badgeBg: 'rgba(234, 179, 8, 0.18)',
+    borderHex: '#facc15',
+    salvageCredits: 1600,
+  },
+};
+
+const CORE_WEAPON_SKINS: WeaponSkinDef[] = [
   {
     id: 'cobalt_standard',
     name: 'Cobalt Tactical',
+    rarity: 'common',
+    signatureWeapon: 'pulse_carbine',
     pattern: 'solid_tech',
     primaryColor: '#1e293b',
     secondaryColor: '#475569',
@@ -112,10 +179,14 @@ export const WEAPON_SKINS: WeaponSkinDef[] = [
     roughness: 0.34,
     price: 0,
     unlockSource: 'starter',
+    chestEligible: true,
+    dropWeight: 18,
   },
   {
     id: 'rainbow_spectrum',
     name: 'Rainbow Spectrum',
+    rarity: 'epic',
+    signatureWeapon: 'arc_repeater',
     pattern: 'rainbow',
     primaryColor: '#ec4899',
     secondaryColor: '#38bdf8',
@@ -126,10 +197,14 @@ export const WEAPON_SKINS: WeaponSkinDef[] = [
     roughness: 0.18,
     price: 400,
     unlockSource: 'store',
+    chestEligible: true,
+    dropWeight: 13,
   },
   {
     id: 'royal_walnut',
     name: 'Golden Walnut',
+    rarity: 'mythic',
+    signatureWeapon: 'volt_scatter',
     pattern: 'gold_walnut',
     primaryColor: '#eab308',
     secondaryColor: '#fef08a',
@@ -140,10 +215,14 @@ export const WEAPON_SKINS: WeaponSkinDef[] = [
     roughness: 0.16,
     price: 550,
     unlockSource: 'store',
+    chestEligible: true,
+    dropWeight: 11,
   },
   {
     id: 'solar_flare',
     name: 'Solar Circuit',
+    rarity: 'rare',
+    signatureWeapon: 'pulse_carbine',
     pattern: 'circuit',
     primaryColor: '#451a03',
     secondaryColor: '#d97706',
@@ -154,10 +233,14 @@ export const WEAPON_SKINS: WeaponSkinDef[] = [
     roughness: 0.26,
     price: 300,
     unlockSource: 'store',
+    chestEligible: true,
+    dropWeight: 15,
   },
   {
     id: 'carbon_phantom',
     name: 'Carbon Hex',
+    rarity: 'epic',
+    signatureWeapon: 'volt_scatter',
     pattern: 'hex_carbon',
     primaryColor: '#0f172a',
     secondaryColor: '#334155',
@@ -168,10 +251,14 @@ export const WEAPON_SKINS: WeaponSkinDef[] = [
     roughness: 0.48,
     price: 450,
     unlockSource: 'store',
+    chestEligible: true,
+    dropWeight: 12,
   },
   {
     id: 'emerald_circuit',
     name: 'Emerald Circuit',
+    rarity: 'rare',
+    signatureWeapon: 'arc_repeater',
     pattern: 'circuit',
     primaryColor: '#064e3b',
     secondaryColor: '#0f766e',
@@ -182,10 +269,14 @@ export const WEAPON_SKINS: WeaponSkinDef[] = [
     roughness: 0.28,
     price: 0,
     unlockSource: 'battlepass',
+    chestEligible: true,
+    dropWeight: 14,
   },
   {
     id: 'obsidian_gold',
     name: 'Obsidian Gold',
+    rarity: 'mythic',
+    signatureWeapon: 'helios_rail',
     pattern: 'gold_walnut',
     primaryColor: '#18181b',
     secondaryColor: '#eab308',
@@ -196,10 +287,14 @@ export const WEAPON_SKINS: WeaponSkinDef[] = [
     roughness: 0.18,
     price: 750,
     unlockSource: 'store',
+    chestEligible: true,
+    dropWeight: 9,
   },
   {
     id: 'prism_relic',
     name: 'Prism Relic',
+    rarity: 'legendary',
+    signatureWeapon: 'helios_rail',
     pattern: 'prism_holo',
     primaryColor: '#e2e8f0',
     secondaryColor: '#6366f1',
@@ -210,7 +305,222 @@ export const WEAPON_SKINS: WeaponSkinDef[] = [
     roughness: 0.14,
     price: 0,
     unlockSource: 'easter_egg',
+    chestEligible: false,
+    dropWeight: 0,
   },
+];
+
+type SkinSeedTuple = [
+  id: string,
+  name: string,
+  rarity: SkinRarity,
+  signatureWeapon: WeaponId,
+  pattern: WeaponSkinPattern,
+  primary: string,
+  secondary: string,
+  emissive: string,
+  grip: string,
+  scope: string,
+  dropWeight: number
+];
+
+const EXTRA_CHEST_SKINS: SkinSeedTuple[] = [
+  // Common (14 new + cobalt_standard = 15 total) — diverse matte/tactical finishes (not restricted to gray)
+  ['cmn_slate_issue', 'Slate Standard', 'common', 'pulse_carbine', 'solid_tech', '#334155', '#64748b', '#cbd5e1', '#1e293b', '#475569', 18],
+  ['cmn_ash_drifter', 'Desert Khaki', 'common', 'arc_repeater', 'solid_tech', '#786952', '#a8987d', '#e7dfc8', '#292524', '#57534e', 17],
+  ['cmn_graphite_line', 'Graphite Carbon', 'common', 'pulse_carbine', 'hex_carbon', '#27272a', '#52525b', '#94a3b8', '#09090b', '#3f3f46', 16],
+  ['cmn_chalk_dust', 'Arctic Chalk', 'common', 'volt_scatter', 'solid_tech', '#cbd5e1', '#94a3b8', '#38bdf8', '#334155', '#64748b', 12],
+  ['cmn_pewter_mesh', 'Navy Steel', 'common', 'arc_repeater', 'hex_carbon', '#1e3a5f', '#64748b', '#93c5fd', '#0f172a', '#334155', 16],
+  ['cmn_iron_primer', 'Rust Primer', 'common', 'pulse_carbine', 'solid_tech', '#6c2d1f', '#9a4633', '#fca5a5', '#1c1917', '#44403c', 18],
+  ['cmn_fog_trooper', 'Olive Patrol', 'common', 'volt_scatter', 'solid_tech', '#3f4f32', '#6b7c59', '#d9f99d', '#1c1917', '#4d5b3e', 11],
+  ['cmn_basalt_frame', 'Basalt Frame', 'common', 'helios_rail', 'solid_tech', '#262626', '#525252', '#a3a3a3', '#171717', '#404040', 8],
+  ['cmn_zinc_oxide', 'Silver Oxide', 'common', 'arc_repeater', 'solid_tech', '#94a3b8', '#e2e8f0', '#38bdf8', '#334155', '#64748b', 15],
+  ['cmn_flint_matte', 'Sandstone Matte', 'common', 'pulse_carbine', 'solid_tech', '#92785b', '#c4a882', '#fde68a', '#292524', '#57534e', 17],
+  ['cmn_concrete_stripe', 'Urban Stripe', 'common', 'volt_scatter', 'hex_carbon', '#52525b', '#d4d4d8', '#f4f4f5', '#18181b', '#3f3f46', 11],
+  ['cmn_nickel_bore', 'Teal Bore', 'common', 'helios_rail', 'solid_tech', '#1f4e5b', '#7a9ca6', '#99f6e4', '#0f172a', '#334155', 7],
+  ['cmn_titanium_primer', 'Raw Titanium', 'common', 'pulse_carbine', 'solid_tech', '#475569', '#cbd5e1', '#e2e8f0', '#0f172a', '#64748b', 16],
+  ['cmn_smoke_guard', 'Burgundy Field', 'common', 'arc_repeater', 'solid_tech', '#581c28', '#8c3b4a', '#fda4af', '#18181b', '#44403c', 15],
+
+  // Uncommon (15 total) — varied finishes (teal, amber, slate-rose, olive, cobalt)
+  ['unc_moss_tactical', 'Moss Tactical', 'uncommon', 'pulse_carbine', 'solid_tech', '#14532d', '#16a34a', '#4ade80', '#052e16', '#15803d', 16],
+  ['unc_pine_vector', 'Copper Vector', 'uncommon', 'arc_repeater', 'circuit', '#7c2d12', '#ea580c', '#fdba74', '#1c1917', '#9a3412', 16],
+  ['unc_viper_grid', 'Ocean Grid', 'uncommon', 'volt_scatter', 'hex_carbon', '#0c4a6e', '#0284c7', '#7dd3fc', '#0f172a', '#0369a1', 12],
+  ['unc_jade_alloy', 'Jade Alloy', 'uncommon', 'pulse_carbine', 'solid_tech', '#065f46', '#34d399', '#a7f3d0', '#064e3b', '#059669', 15],
+  ['unc_ranger_leaf', 'Dusk Ranger', 'uncommon', 'helios_rail', 'solid_tech', '#4c1d95', '#8b5cf6', '#c4b5fd', '#1e1b4b', '#6d28d9', 9],
+  ['unc_acid_stripe', 'Acid Stripe', 'uncommon', 'arc_repeater', 'hex_carbon', '#365314', '#84cc16', '#bef264', '#1a2e05', '#4d7c0f', 15],
+  ['unc_mint_spark', 'Blush Spark', 'uncommon', 'pulse_carbine', 'circuit', '#831843', '#f472b6', '#fbcfe8', '#18181b', '#be185d', 14],
+  ['unc_clover_coat', 'Alpine White', 'uncommon', 'volt_scatter', 'solid_tech', '#e2e8f0', '#64748b', '#22d3ee', '#1e293b', '#475569', 12],
+  ['unc_fern_ops', 'Fern Ops', 'uncommon', 'arc_repeater', 'solid_tech', '#14532d', '#22c55e', '#4ade80', '#09090b', '#166534', 15],
+  ['unc_bunker_olive', 'Amber Bunker', 'uncommon', 'pulse_carbine', 'hex_carbon', '#713f12', '#eab308', '#fef08a', '#1c1917', '#a16207', 14],
+  ['unc_seafoam_pulse', 'Seafoam Pulse', 'uncommon', 'volt_scatter', 'circuit', '#0f766e', '#2dd4bf', '#99f6e4', '#134e4a', '#14b8a6', 11],
+  ['unc_cactus_edge', 'Crimson Edge', 'uncommon', 'helios_rail', 'hex_carbon', '#7f1d1d', '#ef4444', '#fca5a5', '#18181b', '#b91c1c', 8],
+  ['unc_mantis_shell', 'Mantis Shell', 'uncommon', 'arc_repeater', 'circuit', '#1e3a1e', '#22c55e', '#4ade80', '#0f172a', '#15803d', 14],
+  ['unc_canopy_shade', 'Cobalt Shade', 'uncommon', 'pulse_carbine', 'solid_tech', '#172554', '#3b82f6', '#93c5fd', '#0f172a', '#1d4ed8', 15],
+  ['unc_verdigris_rig', 'Verdigris Rig', 'uncommon', 'volt_scatter', 'solid_tech', '#134e4a', '#10b981', '#6ee7b7', '#042f2e', '#0f766e', 12],
+
+  // Rare (13 new + solar_flare + emerald_circuit = 15 total) — diverse finishes across spectrum
+  ['rar_azure_surge', 'Azure Surge', 'rare', 'pulse_carbine', 'circuit', '#1e3a8a', '#3b82f6', '#60a5fa', '#0f172a', '#2563eb', 15],
+  ['rar_frost_cobalt', 'Arctic Titanium', 'rare', 'helios_rail', 'solid_tech', '#f1f5f9', '#64748b', '#38bdf8', '#1e293b', '#334155', 11],
+  ['rar_storm_tide', 'Rosewood Storm', 'rare', 'volt_scatter', 'hex_carbon', '#881337', '#fb7185', '#fda4af', '#18181b', '#be123c', 13],
+  ['rar_cerulean_arc', 'Cerulean Arc', 'rare', 'arc_repeater', 'circuit', '#1e40af', '#2563eb', '#38bdf8', '#0f172a', '#1d4ed8', 14],
+  ['rar_deep_ocean', 'Jungle Alloy', 'rare', 'volt_scatter', 'solid_tech', '#064e3b', '#10b981', '#6ee7b7', '#09090b', '#047857', 13],
+  ['rar_glacial_edge', 'Glacial Edge', 'rare', 'helios_rail', 'circuit', '#075985', '#38bdf8', '#7dd3fc', '#0c4a6e', '#0284c7', 11],
+  ['rar_indigo_wave', 'Violet Carbon', 'rare', 'pulse_carbine', 'hex_carbon', '#3b0764', '#a855f7', '#e879f9', '#09090b', '#7e22ce', 14],
+  ['rar_hydro_coil', 'Tangerine Coil', 'rare', 'arc_repeater', 'circuit', '#7c2d12', '#f97316', '#fde047', '#1c1917', '#c2410c', 13],
+  ['rar_pacific_drift', 'Pacific Drift', 'rare', 'volt_scatter', 'solid_tech', '#1e3a8a', '#0ea5e9', '#bae6fd', '#0f172a', '#2563eb', 12],
+  ['rar_sapphire_plate', 'Obsidian Scarlet', 'rare', 'helios_rail', 'hex_carbon', '#18181b', '#dc2626', '#f87171', '#09090b', '#991b1b', 10],
+  ['rar_cyclone_blue', 'Mint Cyclone', 'rare', 'arc_repeater', 'solid_tech', '#115e59', '#2dd4bf', '#ccfbf1', '#0f172a', '#0d9488', 13],
+  ['rar_sky_lancer', 'Sky Lancer', 'rare', 'pulse_carbine', 'solid_tech', '#1d4ed8', '#38bdf8', '#e0f2fe', '#172554', '#3b82f6', 14],
+  ['rar_polar_vault', 'Amber Vault', 'rare', 'volt_scatter', 'circuit', '#451a03', '#f59e0b', '#fde68a', '#1c1917', '#b45309', 12],
+
+  // Epic (13 new + carbon_phantom + rainbow_spectrum = 15 total) — vibrant mixed palettes
+  ['epc_nebula_pink', 'Nebula Rose', 'epic', 'arc_repeater', 'rainbow', '#701a75', '#ec4899', '#f472b6', '#2e1065', '#be185d', 14],
+  ['epc_amethyst_core', 'Cyber Cyan', 'epic', 'helios_rail', 'circuit', '#083344', '#06b6d4', '#67e8f9', '#0f172a', '#0e7490', 13],
+  ['epc_orchid_pulse', 'Emerald Venom', 'epic', 'volt_scatter', 'hex_carbon', '#052e16', '#22c55e', '#86efac', '#09090b', '#15803d', 12],
+  ['epc_violet_mirage', 'Violet Mirage', 'epic', 'pulse_carbine', 'rainbow', '#3b0764', '#a855f7', '#e879f9', '#1e1b4b', '#9333ea', 13],
+  ['epc_magenta_spark', 'Solar Blaze', 'epic', 'arc_repeater', 'circuit', '#7c2d12', '#f97316', '#fbbf24', '#18181b', '#ea580c', 13],
+  ['epc_twilight_flux', 'Twilight Flux', 'epic', 'helios_rail', 'hex_carbon', '#2e1065', '#7e22ce', '#d946ef', '#09090b', '#6b21a8', 14],
+  ['epc_velvet_prism', 'Glacier Ivory', 'epic', 'volt_scatter', 'prism_holo', '#f8fafc', '#38bdf8', '#a5f3fc', '#1e293b', '#0284c7', 12],
+  ['epc_cyber_blossom', 'Sakura Blossom', 'epic', 'pulse_carbine', 'circuit', '#fdf2f8', '#ec4899', '#f472b6', '#27272a', '#db2777', 12],
+  ['epc_astral_plum', 'Crimson Spec', 'epic', 'helios_rail', 'solid_tech', '#7f1d1d', '#ef4444', '#fda4af', '#18181b', '#b91c1c', 13],
+  ['epc_plasma_berry', 'Cobalt Mirage', 'epic', 'volt_scatter', 'circuit', '#1e3a8a', '#60a5fa', '#22d3ee', '#0f172a', '#2563eb', 12],
+  ['epc_starlight_iris', 'Starlight Iris', 'epic', 'arc_repeater', 'hex_carbon', '#3b0764', '#9333ea', '#c084fc', '#09090b', '#7e22ce', 12],
+  ['epc_hyper_rose', 'Titanium Gold', 'epic', 'pulse_carbine', 'solid_tech', '#334155', '#eab308', '#fef08a', '#18181b', '#a16207', 11],
+  ['epc_void_lilac', 'Void Lilac', 'epic', 'helios_rail', 'rainbow', '#312e81', '#a855f7', '#e879f9', '#09090b', '#7c3aed', 13],
+
+  // Mythic (13 new + obsidian_gold + royal_walnut = 15 total) — varied high-contrast prestige finishes
+  ['myt_crimson_fang', 'Crimson Fang', 'mythic', 'helios_rail', 'hex_carbon', '#450a0a', '#dc2626', '#f87171', '#18181b', '#b91c1c', 14],
+  ['myt_blood_moon', 'Sapphire Forge', 'mythic', 'volt_scatter', 'circuit', '#0f172a', '#2563eb', '#38bdf8', '#09090b', '#1d4ed8', 13],
+  ['myt_inferno_crest', 'Inferno Crest', 'mythic', 'pulse_carbine', 'gold_walnut', '#450a0a', '#f97316', '#ef4444', '#292524', '#991b1b', 11],
+  ['myt_scarlet_vow', 'Orchid Sovereign', 'mythic', 'arc_repeater', 'circuit', '#500724', '#ec4899', '#f472b6', '#18181b', '#be185d', 12],
+  ['myt_ruby_protocol', 'Ruby Protocol', 'mythic', 'helios_rail', 'prism_holo', '#4c0519', '#f43f5e', '#fda4af', '#09090b', '#e11d48', 15],
+  ['myt_ember_king', 'Jade Emperor', 'mythic', 'volt_scatter', 'gold_walnut', '#022c22', '#10b981', '#6ee7b7', '#3f2311', '#047857', 13],
+  ['myt_hellfire_weave', 'Phantom Violet', 'mythic', 'pulse_carbine', 'hex_carbon', '#18181b', '#8b5cf6', '#d946ef', '#09090b', '#6d28d9', 10],
+  ['myt_carnelian_core', 'Arctic Pearl', 'mythic', 'helios_rail', 'circuit', '#f8fafc', '#cbd5e1', '#06b6d4', '#1e293b', '#475569', 14],
+  ['myt_redline_apex', 'Redline Apex', 'mythic', 'arc_repeater', 'hex_carbon', '#18181b', '#dc2626', '#ff4d4d', '#09090b', '#991b1b', 11],
+  ['myt_magma_breaker', 'Magma Copper', 'mythic', 'volt_scatter', 'prism_holo', '#431407', '#fb923c', '#fde047', '#1c1917', '#c2410c', 13],
+  ['myt_garnet_edge', 'Teal Hydra', 'mythic', 'helios_rail', 'solid_tech', '#042f2e', '#14b8a6', '#5eead4', '#0f172a', '#0f766e', 14],
+  ['myt_blaze_daemon', 'Blaze Daemon', 'mythic', 'pulse_carbine', 'circuit', '#3b0a0a', '#e11d48', '#fb7185', '#18181b', '#be123c', 10],
+  ['myt_crimson_nova', 'Neon Prism', 'mythic', 'volt_scatter', 'rainbow', '#312e81', '#ec4899', '#22d3ee', '#09090b', '#6366f1', 12],
+
+  // Legendary (15 chest-eligible + prism_relic = 16 total) — Yellow NAME only; weapon paint spans Pink, Cyan, Emerald, Violet, Pearl, Crimson & Gold!
+  ['aurum_sovereign', 'Aurum Sovereign', 'legendary', 'helios_rail', 'gold_walnut', '#facc15', '#fef08a', '#fde047', '#3f2311', '#ca8a04', 18],
+  ['leg_sunfire_crown', 'Neon Orchid Crown', 'legendary', 'volt_scatter', 'prism_holo', '#ec4899', '#fbcfe8', '#f472b6', '#1c1917', '#db2777', 14],
+  ['leg_solaris_prime', 'Sakura Hypernova', 'legendary', 'pulse_carbine', 'rainbow', '#db2777', '#f9a8d4', '#38bdf8', '#18181b', '#be185d', 11],
+  ['leg_golden_pharaoh', 'Golden Pharaoh', 'legendary', 'helios_rail', 'gold_walnut', '#78350f', '#facc15', '#fde047', '#451a03', '#b45309', 16],
+  ['leg_ambrosia_rail', 'Aether Cyan', 'legendary', 'volt_scatter', 'circuit', '#083344', '#06b6d4', '#67e8f9', '#0f172a', '#0284c7', 13],
+  ['leg_midas_touch', 'Midas Touch', 'legendary', 'arc_repeater', 'gold_walnut', '#f59e0b', '#fef08a', '#fde047', '#422006', '#d97706', 9],
+  ['leg_radiant_halo', 'Glacier Diamond', 'legendary', 'helios_rail', 'prism_holo', '#f8fafc', '#38bdf8', '#22d3ee', '#1e293b', '#0284c7', 15],
+  ['leg_citrine_rex', 'Emerald Sovereign', 'legendary', 'volt_scatter', 'hex_carbon', '#022c22', '#10b981', '#34d399', '#09090b', '#059669', 12],
+  ['leg_electrum_vault', 'Astral Amethyst', 'legendary', 'pulse_carbine', 'prism_holo', '#4c1d95', '#a855f7', '#e879f9', '#1e1b4b', '#7c3aed', 10],
+  ['leg_starburst_gold', 'Chroma Starburst', 'legendary', 'helios_rail', 'rainbow', '#6366f1', '#ec4899', '#22d3ee', '#18181b', '#7c3aed', 15],
+  ['leg_imperial_flare', 'Scarlet Emperor', 'legendary', 'volt_scatter', 'hex_carbon', '#450a0a', '#ef4444', '#fb7185', '#18181b', '#b91c1c', 13],
+  ['leg_amber_monarch', 'Rose Quartz', 'legendary', 'arc_repeater', 'prism_holo', '#9d174d', '#f472b6', '#fdf2f8', '#1c1917', '#db2777', 8],
+  ['leg_zeus_spark', 'Cobalt Tempest', 'legendary', 'helios_rail', 'circuit', '#172554', '#3b82f6', '#93c5fd', '#0f172a', '#1d4ed8', 15],
+  ['leg_gilded_horizon', 'Gilded Horizon', 'legendary', 'volt_scatter', 'gold_walnut', '#92400e', '#fde047', '#fef08a', '#292524', '#d97706', 12],
+  ['leg_celestial_gold', 'Pearl Valkyrie', 'legendary', 'pulse_carbine', 'prism_holo', '#f1f5f9', '#f43f5e', '#fbbf24', '#1e1b4b', '#be123c', 10],
+];
+
+export const WEAPON_SKINS: WeaponSkinDef[] = [
+  ...CORE_WEAPON_SKINS,
+  ...EXTRA_CHEST_SKINS.map(
+    ([
+      id,
+      name,
+      rarity,
+      signatureWeapon,
+      pattern,
+      primaryColor,
+      secondaryColor,
+      emissiveColor,
+      gripColor,
+      scopeColor,
+      dropWeight,
+    ]): WeaponSkinDef => ({
+      id,
+      name,
+      rarity,
+      signatureWeapon,
+      pattern,
+      primaryColor,
+      secondaryColor,
+      emissiveColor,
+      gripColor,
+      scopeColor,
+      metalness:
+        rarity === 'legendary' || rarity === 'mythic'
+          ? 0.92
+          : rarity === 'epic'
+          ? 0.84
+          : rarity === 'rare'
+          ? 0.76
+          : 0.58,
+      roughness:
+        rarity === 'legendary' || rarity === 'mythic'
+          ? 0.16
+          : rarity === 'epic'
+          ? 0.22
+          : rarity === 'rare'
+          ? 0.28
+          : 0.42,
+      price: 0,
+      unlockSource: 'chest',
+      chestEligible: true,
+      dropWeight,
+    })
+  ),
+];
+
+export const CHEST_CATALOG: Record<ChestId, ChestDef> = {
+  vanguard_crate: {
+    id: 'vanguard_crate',
+    name: 'Vanguard Supply Chest',
+    subtitle: 'Common to Epic finishes · Balanced weapon pool',
+    price: 1000,
+    rarityChances: {
+      common: 42,
+      uncommon: 33,
+      rare: 17,
+      epic: 8,
+      mythic: 0,
+      legendary: 0,
+    },
+  },
+  apex_vault: {
+    id: 'apex_vault',
+    name: 'Apex Crimson Chest',
+    subtitle: 'Up to Mythic + 0.5% Aurum Sovereign Legendary',
+    price: 1500,
+    rarityChances: {
+      common: 24.5,
+      uncommon: 28,
+      rare: 27,
+      epic: 14,
+      mythic: 6,
+      legendary: 0.5,
+    },
+    featuredLegendarySkinId: 'aurum_sovereign',
+  },
+  prism_overlord: {
+    id: 'prism_overlord',
+    name: 'Prism Overlord Chest',
+    subtitle: 'Guaranteed Rare – Legendary elite weapon finishes',
+    price: 2000,
+    rarityChances: {
+      common: 0,
+      uncommon: 0,
+      rare: 52,
+      epic: 31,
+      mythic: 13,
+      legendary: 4,
+    },
+  },
+};
+
+export const CHEST_LIST: ChestDef[] = [
+  CHEST_CATALOG.vanguard_crate,
+  CHEST_CATALOG.apex_vault,
+  CHEST_CATALOG.prism_overlord,
 ];
 
 export const AVATAR_SKINS: AvatarSkinDef[] = [
@@ -1484,6 +1794,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   fpsCap: 'unlimited',
   fov: 82,
   mouseSensitivity: 1.0,
+  aimMode: 'hold',
   shadowsEnabled: true,
   particlesEnabled: true,
   audioEnabled: true,
@@ -1499,6 +1810,17 @@ export const DEFAULT_SETTINGS: GameSettings = {
 };
 
 export const PASS_SEASON_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+
+export const DEFAULT_EQUIPPED_WEAPON_SKINS: Record<WeaponId, string> = {
+  pulse_carbine: 'cobalt_standard',
+  volt_scatter: 'cobalt_standard',
+  helios_rail: 'cobalt_standard',
+  arc_repeater: 'cobalt_standard',
+};
+
+export function createDefaultEquippedWeaponSkins(): Record<WeaponId, string> {
+  return { ...DEFAULT_EQUIPPED_WEAPON_SKINS };
+}
 
 export function createDefaultWeaponStats() {
   return {
@@ -1527,6 +1849,7 @@ export function createDefaultProfile(nickname = 'Vanguard01'): PlayerCloudProfil
     unlockedAvatarSkins: ['vanguard_cyan'],
     equippedWeaponId: 'pulse_carbine',
     equippedWeaponSkinId: 'cobalt_standard',
+    equippedWeaponSkins: createDefaultEquippedWeaponSkins(),
     equippedAvatarSkinId: 'vanguard_cyan',
     tutorialCompleted: false,
     easterEggUnlocked: false,

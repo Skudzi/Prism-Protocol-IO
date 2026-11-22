@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
   AVATAR_SKINS,
+  createDefaultEquippedWeaponSkins,
   createDefaultWeaponStats,
   MAPS,
   WEAPONS,
@@ -46,6 +47,7 @@ import {
   GameSettings,
   HealOrbState,
   Keybinds,
+  LiveScoreboardEntry,
   MapDef,
   MapId,
   MapSpawn,
@@ -83,6 +85,7 @@ import {
   buildWoodenBoxPile,
   buildWoodenCrate,
   disposeAvatarRig,
+  disposeObject3D,
 } from './models';
 import {
   createArenaFloorTextures,
@@ -136,6 +139,9 @@ export interface HudSnapshot {
   spawnProtectionRemainingMs: number;
   killedBy: string | null;
   hasGamepad: boolean;
+  scoreboardHeld: boolean;
+  playersOnlineCount: number;
+  scoreboardEntries: LiveScoreboardEntry[];
   killsFeed: Array<{ id: string; text: string }>;
   minimap: MinimapSnapshot;
 }
@@ -290,6 +296,7 @@ export class ArenaEngine {
   private mapId: MapId = 'hyperion_atrium';
   private weaponId: WeaponId = 'pulse_carbine';
   private weaponSkinId = 'cobalt_standard';
+  private equippedWeaponSkins: Record<WeaponId, string> = createDefaultEquippedWeaponSkins();
   private avatarSkinId = 'vanguard_navy';
   private playerNickname = 'Vanguard01';
   private settings: GameSettings;
@@ -373,8 +380,11 @@ export class ArenaEngine {
   private draggingLook = false;
   private pointerLocked = false;
   private prevGamepadButtons: boolean[] = [];
+  private prevLtDown = false;
   private gamepadTriggerFiring = false;
   private hasGamepad = false;
+  private scoreboardHeld = false;
+  private playersOnlineCount = 1;
   private lastNetSyncMs = 0;
   private lastHudEmitMs = 0;
   private tourAngle = 0;
@@ -589,8 +599,13 @@ export class ArenaEngine {
   private onWindowBlur = () => {
     this.keysPressed.clear();
     this.mouseDown = false;
+    this.rightMouseDown = false;
+    this.gamepadTriggerFiring = false;
+    this.prevLtDown = false;
     this.draggingLook = false;
     this.isScoped = false;
+    this.scoreboardHeld = false;
+    this.emitHud(true);
   };
 
   private onVisibilityChange = () => {
@@ -612,6 +627,15 @@ export class ArenaEngine {
     this.keysPressed.add(e.code);
 
     if (this.screenState !== 'playing') return;
+
+    if (e.code === 'Tab') {
+      e.preventDefault();
+      if (!this.scoreboardHeld) {
+        this.scoreboardHeld = true;
+        this.emitHud(true);
+      }
+      return;
+    }
 
     if (e.code === this.keybinds.pause || e.code === 'Escape') {
       document.exitPointerLock?.();
@@ -657,13 +681,25 @@ export class ArenaEngine {
 
   private onKeyUp = (e: KeyboardEvent) => {
     this.keysPressed.delete(e.code);
+    if (e.code === 'Tab') {
+      e.preventDefault();
+      if (this.scoreboardHeld) {
+        this.scoreboardHeld = false;
+        this.emitHud(true);
+      }
+    }
   };
 
   private onMouseDown = (e: MouseEvent) => {
     if (this.screenState !== 'playing' || this.isDead) return;
     if (e.button === 2) {
       this.rightMouseDown = true;
-      this.isScoped = true;
+      if (this.settings.aimMode === 'toggle') {
+        this.isScoped = !this.isScoped;
+      } else {
+        this.isScoped = true;
+      }
+      this.emitHud(true);
       return;
     }
     if (e.button === 0) {
@@ -683,7 +719,10 @@ export class ArenaEngine {
   private onMouseUp = (e: MouseEvent) => {
     if (e.button === 2) {
       this.rightMouseDown = false;
-      this.isScoped = false;
+      if (this.settings.aimMode !== 'toggle') {
+        this.isScoped = this.prevLtDown;
+        this.emitHud(true);
+      }
     }
     if (e.button === 0) {
       this.mouseDown = false;
@@ -752,18 +791,41 @@ export class ArenaEngine {
       }
     }
 
+    if (settings.aimMode !== 'toggle' && !this.rightMouseDown && !this.prevLtDown) {
+      this.isScoped = false;
+    }
     soundEngine.enabled = settings.audioEnabled;
     soundEngine.volume = settings.masterVolume;
   }
 
-  public setLoadout(weaponId: WeaponId, weaponSkinId: string, avatarSkinId?: string) {
+  public setPlayersOnlineCount(count: number) {
+    const safeCount = Math.max(1, Math.round(Number(count) || 1));
+    if (safeCount !== this.playersOnlineCount) {
+      this.playersOnlineCount = safeCount;
+      if (this.screenState === 'playing') {
+        this.emitHud(false);
+      }
+    }
+  }
+
+  public setLoadout(
+    weaponId: WeaponId,
+    weaponSkinId: string,
+    avatarSkinId?: string,
+    equippedWeaponSkins?: Record<WeaponId, string>
+  ) {
     const nextAvatar = avatarSkinId ?? this.avatarSkinId;
+    const nextSlots = equippedWeaponSkins
+      ? { ...this.equippedWeaponSkins, ...equippedWeaponSkins }
+      : { ...this.equippedWeaponSkins, [weaponId]: weaponSkinId };
+    const resolvedSkinId = nextSlots[weaponId] ?? weaponSkinId;
     const changed =
       this.weaponId !== weaponId ||
-      this.weaponSkinId !== weaponSkinId ||
+      this.weaponSkinId !== resolvedSkinId ||
       this.avatarSkinId !== nextAvatar;
+    this.equippedWeaponSkins = nextSlots;
     this.weaponId = weaponId;
-    this.weaponSkinId = weaponSkinId;
+    this.weaponSkinId = resolvedSkinId;
     this.avatarSkinId = nextAvatar;
     if (changed) {
       this.rebuildWeaponMesh();
@@ -773,6 +835,7 @@ export class ArenaEngine {
   public setWeapon(weaponId: WeaponId) {
     if (this.weaponId === weaponId) return;
     this.weaponId = weaponId;
+    this.weaponSkinId = this.equippedWeaponSkins[weaponId] ?? this.weaponSkinId;
     this.isScoped = false;
     this.isReloading = false;
     this.reloadRemainingMs = 0;
@@ -784,8 +847,11 @@ export class ArenaEngine {
   private rebuildWeaponMesh() {
     if (this.weaponMesh) {
       this.weaponMount.remove(this.weaponMesh);
+      disposeObject3D(this.weaponMesh);
+      this.weaponMesh = null;
     }
-    const skin = WEAPON_SKINS.find((s) => s.id === this.weaponSkinId) ?? WEAPON_SKINS[0];
+    const activeSkinId = this.equippedWeaponSkins[this.weaponId] ?? this.weaponSkinId;
+    const skin = WEAPON_SKINS.find((s) => s.id === activeSkinId) ?? WEAPON_SKINS[0];
     const avatarSkin = AVATAR_SKINS.find((a) => a.id === this.avatarSkinId) ?? AVATAR_SKINS[0];
     this.weaponMesh = buildWeaponViewModel(this.weaponId, skin, avatarSkin, {
       disableClearcoat: this.perfSettings.disableClearcoat,
@@ -801,7 +867,9 @@ export class ArenaEngine {
       this.mouseDown = false;
       this.rightMouseDown = false;
       this.gamepadTriggerFiring = false;
+      this.prevLtDown = false;
       this.isScoped = false;
+      this.scoreboardHeld = false;
       document.exitPointerLock?.();
     }
   }
@@ -875,6 +943,8 @@ export class ArenaEngine {
     this.reloadRemainingMs = 0;
     this.isScoped = false;
     this.rightMouseDown = false;
+    this.prevLtDown = false;
+    this.scoreboardHeld = false;
     this.gamepadTriggerFiring = false;
     this.isDead = false;
     this.killCamRemainingMs = 0;
@@ -2057,7 +2127,8 @@ export class ArenaEngine {
       }
     }
 
-    const skin = WEAPON_SKINS.find((s) => s.id === this.weaponSkinId) ?? WEAPON_SKINS[0];
+    const activeSkinId = this.equippedWeaponSkins[this.weaponId] ?? this.weaponSkinId;
+    const skin = WEAPON_SKINS.find((s) => s.id === activeSkinId) ?? WEAPON_SKINS[0];
     const beamColor =
       weapon.ammoStyle === 'gold_bullet'
         ? '#fbbf24'
@@ -2817,9 +2888,21 @@ export class ArenaEngine {
       soundEngine.playDash();
     }
 
-    // LT / L2 (6) -> Scope / ADS
+    // LT / L2 (6) -> Scope / ADS (respects Hold vs Toggle Aim Mode)
     const ltDown = (gp.buttons[6]?.value ?? 0) > 0.35;
-    this.isScoped = ltDown || this.rightMouseDown;
+    if (this.settings.aimMode === 'toggle') {
+      if (ltDown && !this.prevLtDown) {
+        this.isScoped = !this.isScoped;
+        this.emitHud(true);
+      }
+    } else {
+      const nextScoped = ltDown || this.rightMouseDown;
+      if (nextScoped !== this.isScoped) {
+        this.isScoped = nextScoped;
+        this.emitHud(true);
+      }
+    }
+    this.prevLtDown = ltDown;
 
     // RT / R2 (7) -> Fire
     this.gamepadTriggerFiring = (gp.buttons[7]?.value ?? 0) > 0.35;
@@ -3219,41 +3302,38 @@ export class ArenaEngine {
       deaths: this.deaths,
     });
 
-    let leaderboard: MatchLeaderboardEntry[] | undefined;
-    if (this.gameMode === 'tdm') {
-      const entries: MatchLeaderboardEntry[] = [
-        {
-          id: 'local-player',
-          nickname: this.playerNickname,
-          team: 'cyan',
-          isBot: false,
-          isLocalPlayer: true,
-          kills: this.tags,
-          deaths: this.deaths,
-        },
-        ...this.bots
-          .filter((b) => b.policy !== 'drone')
-          .map((b) => ({
-            id: b.id,
-            nickname: b.nickname,
-            team: b.team,
-            isBot: true,
-            isLocalPlayer: false,
-            kills: b.kills,
-            deaths: b.deaths,
-          })),
-        ...Array.from(this.peerMeshes.entries()).map(([id, p]) => ({
-          id,
-          nickname: p.data.nickname,
-          team: p.data.team,
-          isBot: p.data.isBot,
+    const entries: MatchLeaderboardEntry[] = [
+      {
+        id: 'local-player',
+        nickname: this.playerNickname,
+        team: 'cyan',
+        isBot: false,
+        isLocalPlayer: true,
+        kills: this.tags,
+        deaths: this.deaths,
+      },
+      ...this.bots
+        .filter((b) => b.policy !== 'drone')
+        .map((b) => ({
+          id: b.id,
+          nickname: b.nickname,
+          team: b.team,
+          isBot: true,
           isLocalPlayer: false,
-          kills: p.data.kills ?? p.data.score ?? 0,
-          deaths: p.data.deaths ?? 0,
+          kills: b.kills,
+          deaths: b.deaths,
         })),
-      ];
-      leaderboard = sortLeaderboardEntries(entries);
-    }
+      ...Array.from(this.peerMeshes.entries()).map(([id, p]) => ({
+        id,
+        nickname: p.data.nickname,
+        team: p.data.team,
+        isBot: p.data.isBot,
+        isLocalPlayer: false,
+        kills: p.data.kills ?? p.data.score ?? 0,
+        deaths: p.data.deaths ?? 0,
+      })),
+    ];
+    const leaderboard: MatchLeaderboardEntry[] = sortLeaderboardEntries(entries);
 
     this.callbacks.onMatchEnd(
       {
@@ -3294,6 +3374,46 @@ export class ArenaEngine {
         ? Math.min(1, Math.max(0, 1 - this.reloadRemainingMs / this.reloadTotalMs))
         : 0;
 
+    const scoreboardRaw: LiveScoreboardEntry[] = [
+      {
+        id: 'local-player',
+        nickname: this.playerNickname,
+        team: 'cyan',
+        isBot: false,
+        isLocalPlayer: true,
+        kills: this.tags,
+        deaths: this.deaths,
+        online: true,
+        weaponId: this.weaponId,
+      },
+      ...Array.from(this.peerMeshes.entries()).map(([id, p]) => ({
+        id,
+        nickname: p.data.nickname,
+        team: p.data.team,
+        isBot: p.data.isBot,
+        isLocalPlayer: false,
+        kills: p.data.kills ?? p.data.score ?? 0,
+        deaths: p.data.deaths ?? 0,
+        online: true,
+        weaponId: p.data.weaponId,
+      })),
+      ...this.bots
+        .filter((b) => b.policy !== 'drone')
+        .map((b) => ({
+          id: b.id,
+          nickname: b.nickname,
+          team: b.team,
+          isBot: true,
+          isLocalPlayer: false,
+          kills: b.kills,
+          deaths: b.deaths,
+          online: false,
+          weaponId: b.weaponId,
+        })),
+    ];
+    const scoreboardEntries = sortLeaderboardEntries(scoreboardRaw) as LiveScoreboardEntry[];
+    const effectiveOnlineCount = Math.max(this.playersOnlineCount, 1 + this.peerMeshes.size);
+
     const map = MAPS[this.mapId];
     this.callbacks.onHudUpdate({
       hp: Math.max(0, Math.round(this.hp)),
@@ -3332,6 +3452,9 @@ export class ArenaEngine {
         : Math.round(getSpawnProtectionRemainingMs(this.playerSpawnProtection, performance.now())),
       killedBy: this.killedBy,
       hasGamepad: this.hasGamepad,
+      scoreboardHeld: this.scoreboardHeld,
+      playersOnlineCount: effectiveOnlineCount,
+      scoreboardEntries,
       killsFeed: this.killsFeed,
       minimap: {
         mapId: this.mapId,
@@ -3387,6 +3510,10 @@ export class ArenaEngine {
     }
     for (const peer of this.peerMeshes.values()) {
       disposeAvatarRig(peer.rig);
+    }
+    if (this.weaponMesh) {
+      disposeObject3D(this.weaponMesh);
+      this.weaponMesh = null;
     }
     this.clearMapScene();
     Object.values(this.projectileGeos).forEach((g) => g.dispose());

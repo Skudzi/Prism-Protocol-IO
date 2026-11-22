@@ -261,7 +261,10 @@ interface AccountPanelProps {
     password: string,
     platform: PlatformType
   ) => Promise<{ ok: boolean; error?: string }>;
-  onUpdatePlatform: (platform: PlatformType) => Promise<{ ok: boolean; error?: string }>;
+  onUpdateIdentity: (
+    nickname: string,
+    platform: PlatformType
+  ) => Promise<{ ok: boolean; error?: string }>;
   onLogout: () => Promise<void>;
   onSyncNow: () => void;
 }
@@ -278,13 +281,14 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
   onGoogleSignIn,
   onLogin,
   onRegister,
-  onUpdatePlatform,
+  onUpdateIdentity,
   onLogout,
   onSyncNow,
 }) => {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [nicknameInput, setNicknameInput] = useState(profile.nickname);
   const [platform, setPlatform] = useState<PlatformType>(profile.platform);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -293,6 +297,10 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
   useEffect(() => {
     setPlatform(profile.platform);
   }, [profile.platform]);
+
+  useEffect(() => {
+    setNicknameInput(profile.nickname);
+  }, [profile.nickname]);
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -326,15 +334,20 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
     }
   };
 
-  const handleSavePlatform = async (e: React.FormEvent) => {
+  const handleSaveIdentity = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setStatusMsg(null);
+    const cleaned = nicknameInput.trim().replace(/\s+/g, ' ');
+    if (cleaned.length < 3 || cleaned.length > 20) {
+      setErrorMsg('Nickname must be 3–20 characters.');
+      return;
+    }
     setBusy(true);
-    const res = await onUpdatePlatform(platform);
+    const res = await onUpdateIdentity(cleaned, platform);
     setBusy(false);
     if (!res.ok) {
-      setErrorMsg(res.error ?? 'Could not sync platform');
+      setErrorMsg(res.error ?? 'Could not save callsign & platform');
     } else {
       setStatusMsg(t(lang, 'account.synced'));
     }
@@ -599,7 +612,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
         </div>
       ) : (
         <form
-          onSubmit={handleSavePlatform}
+          onSubmit={handleSaveIdentity}
           className="flex flex-col justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-5 space-y-4"
         >
           <div className="space-y-3">
@@ -637,6 +650,30 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
 
             <div>
               <label
+                htmlFor="acc-nickname"
+                className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
+              >
+                {t(lang, 'account.nickname')}
+              </label>
+              <input
+                id="acc-nickname"
+                data-testid="account-nickname-input"
+                type="text"
+                required
+                minLength={3}
+                maxLength={20}
+                value={nicknameInput}
+                onChange={(e) => setNicknameInput(e.target.value)}
+                placeholder="e.g. PrismPlayer1"
+                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+              />
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                {t(lang, 'account.customNicknameHint')}
+              </p>
+            </div>
+
+            <div>
+              <label
                 htmlFor="acc-platform"
                 className="block text-xs font-semibold text-slate-700 dark:text-slate-300"
               >
@@ -663,6 +700,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
 
           <button
             type="submit"
+            data-testid="account-save-identity-btn"
             disabled={busy}
             className="w-full rounded-lg bg-cyan-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50 cursor-pointer"
           >

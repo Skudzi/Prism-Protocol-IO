@@ -1,14 +1,16 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildAvatarRig, disposeAvatarRig, AnimatedAvatarRig } from '../engine/models';
 import { createContactShadowTexture } from '../engine/textures';
 import { getOperatorWeaponBodyStyle } from '../game/rules';
-import { AvatarSkinDef, WeaponId } from '../game/types';
+import { AvatarSkinDef, LanguageCode, WeaponId } from '../game/types';
+import { t } from '../i18n/translations';
 
 interface OperatorPreviewCanvasProps {
   weaponId: WeaponId;
   avatarSkin: AvatarSkinDef;
+  lang?: LanguageCode;
 }
 
 function detectSoftwareGl(): boolean {
@@ -44,9 +46,9 @@ const BODY_LABELS: Record<WeaponId, { title: string; subtitle: string }> = {
 export const OperatorPreviewCanvas: React.FC<OperatorPreviewCanvasProps> = ({
   weaponId,
   avatarSkin,
+  lang = 'en',
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const [yawDeg, setYawDeg] = useState(24);
   const stateRef = useRef({
     yaw: 0.42,
     dragging: false,
@@ -199,24 +201,25 @@ export const OperatorPreviewCanvas: React.FC<OperatorPreviewCanvasProps> = ({
         </div>
         <button
           type="button"
+          data-testid="operator-turn-btn"
           onClick={() => {
-            const nextYaw = stateRef.current.yaw + Math.PI * 0.5;
-            stateRef.current.yaw = nextYaw;
-            setYawDeg(Math.round((nextYaw * 180) / Math.PI) % 360);
+            stateRef.current.yaw += Math.PI * 0.5;
             stateRef.current.requestRender();
           }}
-          className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-700 cursor-pointer"
+          className="rounded border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-700 cursor-pointer"
         >
-          Turn ({yawDeg}°)
+          {t(lang, 'cta.turn')}
         </button>
       </div>
 
       <div
         ref={mountRef}
         data-testid="operator-3d-preview"
+        style={{ touchAction: 'none' }}
         onPointerDown={(e) => {
           stateRef.current.dragging = true;
           stateRef.current.lastX = e.clientX;
+          e.currentTarget.setPointerCapture?.(e.pointerId);
         }}
         onPointerMove={(e) => {
           if (!stateRef.current.dragging) return;
@@ -225,13 +228,19 @@ export const OperatorPreviewCanvas: React.FC<OperatorPreviewCanvasProps> = ({
           stateRef.current.yaw += dx * 0.012;
           stateRef.current.requestRender();
         }}
-        onPointerUp={() => {
+        onPointerUp={(e) => {
+          stateRef.current.dragging = false;
+          if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+          }
+        }}
+        onPointerCancel={() => {
           stateRef.current.dragging = false;
         }}
         onPointerLeave={() => {
-          stateRef.current.dragging = false;
+          if (!stateRef.current.dragging) return;
         }}
-        className="mt-2 h-56 w-full cursor-grab active:cursor-grabbing rounded-md bg-gradient-to-b from-slate-800/70 to-slate-950/90"
+        className="mt-2 h-56 w-full cursor-grab active:cursor-grabbing rounded-md bg-gradient-to-b from-slate-800/70 to-slate-950/90 select-none"
       />
 
       <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">

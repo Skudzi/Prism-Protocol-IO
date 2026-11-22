@@ -3,7 +3,7 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 import { DEFAULT_KEYBINDS, DEFAULT_SETTINGS, PASS_SEASON_DURATION_MS } from './game/catalog';
-import { normalizeWeaponStats } from './game/rules';
+import { normalizeEquippedWeaponSkins, normalizeWeaponStats } from './game/rules';
 import { PlatformType, PlayerCloudProfile } from './game/types';
 
 const app = initializeApp(firebaseConfig);
@@ -118,7 +118,7 @@ export function buildFirestoreProfilePayload(
 
   const unlockedWeapons = Array.from(
     new Set(['cobalt_standard', ...(profile.unlockedWeaponSkins ?? [])].filter((s) => typeof s === 'string' && s.length >= 1 && s.length <= 64))
-  ).slice(0, 100);
+  ).slice(0, 250);
   const unlockedAvatars = Array.from(
     new Set(['vanguard_cyan', ...(profile.unlockedAvatarSkins ?? [])].filter((s) => typeof s === 'string' && s.length >= 1 && s.length <= 64))
   ).slice(0, 100);
@@ -149,6 +149,11 @@ export function buildFirestoreProfilePayload(
       ? profile.equippedWeaponId
       : 'pulse_carbine',
     equippedWeaponSkinId: (profile.equippedWeaponSkinId || 'cobalt_standard').slice(0, 64),
+    equippedWeaponSkins: normalizeEquippedWeaponSkins(
+      profile.equippedWeaponSkins,
+      profile.equippedWeaponSkinId,
+      profile.equippedWeaponId
+    ),
     equippedAvatarSkinId: (profile.equippedAvatarSkinId || 'vanguard_cyan').slice(0, 64),
     tutorialCompleted: Boolean(profile.tutorialCompleted),
     easterEggUnlocked: Boolean(profile.easterEggUnlocked),
@@ -197,6 +202,7 @@ export function buildFirestoreProfilePayload(
         : 'unlimited',
       fov: clampInt(mergedSettings.fov, 150, 50),
       mouseSensitivity: clampNum(mergedSettings.mouseSensitivity, 20, 0.05),
+      aimMode: mergedSettings.aimMode === 'toggle' ? 'toggle' : 'hold',
       shadowsEnabled: Boolean(mergedSettings.shadowsEnabled),
       particlesEnabled: Boolean(mergedSettings.particlesEnabled),
       audioEnabled: Boolean(mergedSettings.audioEnabled),

@@ -38,3 +38,14 @@ test('firestore.rules stays under Firestore 10-call regex .matches() limit', () 
   const matchesCalls = rulesText.match(/\.matches\(/g) ?? [];
   assert.ok(matchesCalls.length <= 5, `Too many .matches() definitions (${matchesCalls.length})`);
 });
+
+test('firestore.rules allows up to 250 unlocked weapon skins and nickname identity updates', () => {
+  assert.match(rulesText, /isValidSkinList\(data\.unlockedWeaponSkins,\s*250\)/);
+  assert.match(rulesText, /isProfileIdentitySyncAction[\s\S]*'nickname'/);
+});
+
+test('firestore.rules validates per-weapon equippedWeaponSkins map and settings.aimMode', () => {
+  assert.match(rulesText, /isValidEquippedWeaponSkinsMap\(data\.equippedWeaponSkins\)/);
+  assert.match(rulesText, /s\.aimMode is string && s\.aimMode in \['hold', 'toggle'\]/);
+});
+

@@ -24,6 +24,8 @@ export type GameScreenState = 'title' | 'playing' | 'paused' | 'gameover';
 
 export type GameMode = 'ffa' | 'tdm';
 
+export type AimMode = 'hold' | 'toggle';
+
 export interface WeaponDef {
   id: WeaponId;
   nameKey: string;
@@ -52,9 +54,21 @@ export type WeaponSkinPattern =
   | 'circuit'
   | 'prism_holo';
 
+export type SkinRarity =
+  | 'common'
+  | 'uncommon'
+  | 'rare'
+  | 'epic'
+  | 'mythic'
+  | 'legendary';
+
+export type ChestId = 'vanguard_crate' | 'apex_vault' | 'prism_overlord';
+
 export interface WeaponSkinDef {
   id: string;
   name: string;
+  rarity: SkinRarity;
+  signatureWeapon: WeaponId;
   pattern: WeaponSkinPattern;
   primaryColor: string;
   secondaryColor: string;
@@ -64,7 +78,46 @@ export interface WeaponSkinDef {
   metalness: number;
   roughness: number;
   price: number;
-  unlockSource: 'starter' | 'store' | 'battlepass' | 'easter_egg';
+  unlockSource: 'starter' | 'store' | 'battlepass' | 'easter_egg' | 'chest';
+  chestEligible?: boolean;
+  dropWeight?: number;
+}
+
+export interface RarityMetaDef {
+  id: SkinRarity;
+  label: string;
+  colorHex: string;
+  badgeBg: string;
+  borderHex: string;
+  salvageCredits: number;
+}
+
+export interface ChestDef {
+  id: ChestId;
+  name: string;
+  subtitle: string;
+  price: number;
+  rarityChances: Record<SkinRarity, number>;
+  featuredLegendarySkinId?: string;
+}
+
+export interface ChestOpenResult {
+  ok: boolean;
+  profile: PlayerCloudProfile;
+  chestId: ChestId;
+  skin?: WeaponSkinDef;
+  isDuplicate?: boolean;
+  refundCredits?: number;
+  reason?: string;
+}
+
+export interface MatchmakingRoomInfo {
+  roomCode: string;
+  mode: GameMode;
+  mapId: MapId;
+  playerCount: number;
+  maxPlayers: number;
+  isNewRoom: boolean;
 }
 
 export interface AvatarSkinDef {
@@ -239,6 +292,7 @@ export interface GameSettings {
   fpsCap: FpsCapMode;
   fov: number;
   mouseSensitivity: number;
+  aimMode: AimMode;
   shadowsEnabled: boolean;
   particlesEnabled: boolean;
   audioEnabled: boolean;
@@ -275,6 +329,7 @@ export interface PlayerCloudProfile {
   unlockedAvatarSkins: string[];
   equippedWeaponId: WeaponId;
   equippedWeaponSkinId: string;
+  equippedWeaponSkins: Record<WeaponId, string>;
   equippedAvatarSkinId: string;
   tutorialCompleted: boolean;
   easterEggUnlocked: boolean;
@@ -348,6 +403,11 @@ export interface MatchLeaderboardEntry {
   isLocalPlayer: boolean;
   kills: number;
   deaths: number;
+}
+
+export interface LiveScoreboardEntry extends MatchLeaderboardEntry {
+  online: boolean;
+  weaponId?: WeaponId;
 }
 
 export interface MatchSummary {

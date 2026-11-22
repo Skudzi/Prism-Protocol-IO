@@ -12,11 +12,19 @@ import {
   validateMovePacket,
 } from './src/game/anticheat';
 import { createDefaultProfile, DEFAULT_SETTINGS, MAPS } from './src/game/catalog';
-import { normalizeWeaponStats, syncBattlePassSeason } from './src/game/rules';
+import {
+  ActiveMatchRoomState,
+  allocateMatchmakingRoom,
+  MAX_PLAYERS_PER_ROOM,
+  normalizeEquippedWeaponSkins,
+  normalizeWeaponStats,
+  syncBattlePassSeason,
+} from './src/game/rules';
 import {
   ChatMessage,
   FriendEntry,
   FriendStatus,
+  GameMode,
   MapId,
   PartyInvite,
   PlatformType,
@@ -98,6 +106,14 @@ function loadStore(): CloudStoreData {
     for (const u of Object.values(parsed.users)) {
       if (u?.profile) {
         u.profile.settings = { ...DEFAULT_SETTINGS, ...(u.profile.settings ?? {}) };
+        u.profile.equippedWeaponSkins = normalizeEquippedWeaponSkins(
+          u.profile.equippedWeaponSkins,
+          u.profile.equippedWeaponSkinId,
+          u.profile.equippedWeaponId
+        );
+        u.profile.equippedWeaponSkinId =
+          u.profile.equippedWeaponSkins[u.profile.equippedWeaponId] ??
+          u.profile.equippedWeaponSkinId;
         u.profile.stats = {
           ...(u.profile.stats ?? {
             matchesPlayed: 0,
@@ -205,6 +221,7 @@ interface ConnectedClient {
   platform: PlatformType;
   status: FriendStatus;
   roomCode: string;
+  gameMode: GameMode;
   mapId: MapId;
   x: number;
   y: number;
@@ -218,8 +235,65 @@ interface ConnectedClient {
   antiCheat: PlayerAntiCheatState;
 }
 
+interface RegisteredRoom {
+  roomCode: string;
+  mode: GameMode;
+  mapId: MapId;
+  reservations: number[];
+  lastActiveMs: number;
+}
+
 const clients = new Map<string, ConnectedClient>();
 const pendingInvites = new Map<string, PartyInvite[]>();
+const roomRegistry = new Map<string, RegisteredRoom>();
+const RESERVATION_TTL_MS = 15_000;
+const EMPTY_ROOM_TTL_MS = 30_000;
+
+function getRoomLiveCount(roomCode: string): number {
+  let count = 0;
+  for (const c of clients.values()) {
+    if (c.roomCode === roomCode && c.ws.readyState === WebSocket.OPEN) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function pruneReservations(room: RegisteredRoom, nowMs: number) {
+  room.reservations = room.reservations.filter((exp) => exp > nowMs);
+}
+
+function getActiveMatchRooms(nowMs = Date.now()): ActiveMatchRoomState[] {
+  const result: ActiveMatchRoomState[] = [];
+  for (const [code, room] of roomRegistry.entries()) {
+    pruneReservations(room, nowMs);
+    const liveCount = getRoomLiveCount(code);
+    const effectiveCount = liveCount + room.reservations.length;
+    if (effectiveCount === 0 && nowMs - room.lastActiveMs > EMPTY_ROOM_TTL_MS) {
+      roomRegistry.delete(code);
+      continue;
+    }
+    if (effectiveCount > 0) {
+      room.lastActiveMs = nowMs;
+    }
+    result.push({
+      roomCode: room.roomCode,
+      mode: room.mode,
+      mapId: room.mapId,
+      playerCount: effectiveCount,
+    });
+  }
+  return result;
+}
+
+function cleanupRoomIfEmpty(roomCode: string, nowMs = Date.now()) {
+  const room = roomRegistry.get(roomCode);
+  if (!room) return;
+  pruneReservations(room, nowMs);
+  if (getRoomLiveCount(roomCode) === 0 && room.reservations.length === 0) {
+    roomRegistry.delete(roomCode);
+  }
+}
 
 function getLiveStatusForNickname(nickname: string): {
   status: FriendStatus;
@@ -286,6 +360,53 @@ async function startServer() {
     res.json({ ok: true, playersOnline: clients.size });
   });
 
+  // Matchmaking: always random map, up to 12 players share one arena per mode before opening a new random arena
+  app.post('/api/matchmaking/find', (req, res) => {
+    const mode: GameMode = req.body?.mode === 'tdm' ? 'tdm' : 'ffa';
+    const excludeRoomCode =
+      typeof req.body?.excludeRoomCode === 'string' && req.body.excludeRoomCode.trim()
+        ? req.body.excludeRoomCode.trim()
+        : undefined;
+    const excludeMapId =
+      typeof req.body?.excludeMapId === 'string' && req.body.excludeMapId in MAPS
+        ? (req.body.excludeMapId as MapId)
+        : undefined;
+
+    const nowMs = Date.now();
+    const activeRooms = getActiveMatchRooms(nowMs);
+    const allocated = allocateMatchmakingRoom(activeRooms, mode, {
+      maxPlayers: MAX_PLAYERS_PER_ROOM,
+      excludeRoomCode,
+      excludeMapIds: excludeMapId ? [excludeMapId] : undefined,
+    });
+
+    let reg = roomRegistry.get(allocated.roomCode);
+    if (!reg) {
+      reg = {
+        roomCode: allocated.roomCode,
+        mode,
+        mapId: allocated.mapId,
+        reservations: [],
+        lastActiveMs: nowMs,
+      };
+      roomRegistry.set(allocated.roomCode, reg);
+    }
+    pruneReservations(reg, nowMs);
+    reg.reservations.push(nowMs + RESERVATION_TTL_MS);
+    reg.lastActiveMs = nowMs;
+
+    const updatedCount = Math.min(
+      MAX_PLAYERS_PER_ROOM,
+      getRoomLiveCount(reg.roomCode) + reg.reservations.length
+    );
+
+    res.json({
+      ...allocated,
+      playerCount: updatedCount,
+      maxPlayers: MAX_PLAYERS_PER_ROOM,
+    });
+  });
+
   // Register (nickname + password, NO CAPTCHA)
   app.post('/api/auth/register', (req, res) => {
     const rawNick = String(req.body?.nickname ?? '').trim();
@@ -343,6 +464,11 @@ async function startServer() {
         ? Array.from(new Set(['vanguard_cyan', ...seed.unlockedAvatarSkins]))
         : baseProfile.unlockedAvatarSkins,
       equippedWeaponId: seed?.equippedWeaponId ?? baseProfile.equippedWeaponId,
+      equippedWeaponSkins: normalizeEquippedWeaponSkins(
+        seed?.equippedWeaponSkins,
+        seed?.equippedWeaponSkinId ?? baseProfile.equippedWeaponSkinId,
+        seed?.equippedWeaponId ?? baseProfile.equippedWeaponId
+      ),
       equippedWeaponSkinId: seed?.equippedWeaponSkinId ?? baseProfile.equippedWeaponSkinId,
       equippedAvatarSkinId: seed?.equippedAvatarSkinId ?? baseProfile.equippedAvatarSkinId,
       passSeasonNumber:
@@ -442,8 +568,15 @@ async function startServer() {
     }
 
     // Merge sanitized cloud save fields
+    const rawCustomNick =
+      typeof incoming.nickname === 'string'
+        ? incoming.nickname.trim().replace(/\s+/g, ' ').slice(0, 20)
+        : '';
+    const nextNickname = rawCustomNick.length >= 3 ? rawCustomNick : user.profile.nickname;
+
     const mergedProfile: PlayerCloudProfile = {
       ...user.profile,
+      nickname: nextNickname,
       platform: incoming.platform ?? user.profile.platform,
       credits:
         typeof incoming.credits === 'number' && Number.isFinite(incoming.credits)
@@ -482,6 +615,11 @@ async function startServer() {
         ? incoming.unlockedAvatarSkins
         : user.profile.unlockedAvatarSkins,
       equippedWeaponId: incoming.equippedWeaponId ?? user.profile.equippedWeaponId,
+      equippedWeaponSkins: normalizeEquippedWeaponSkins(
+        incoming.equippedWeaponSkins ?? user.profile.equippedWeaponSkins,
+        incoming.equippedWeaponSkinId ?? user.profile.equippedWeaponSkinId,
+        incoming.equippedWeaponId ?? user.profile.equippedWeaponId
+      ),
       equippedWeaponSkinId:
         incoming.equippedWeaponSkinId ?? user.profile.equippedWeaponSkinId,
       equippedAvatarSkinId:
@@ -616,6 +754,7 @@ async function startServer() {
       platform: 'Web',
       status: 'lobby',
       roomCode: '',
+      gameMode: 'ffa',
       mapId: 'hyperion_atrium',
       x: 0,
       y: 0,
@@ -634,9 +773,11 @@ async function startServer() {
       JSON.stringify({
         type: 'connected',
         clientId,
+        playersOnline: clients.size,
         chatHistory: store.chatHistory.slice(-30),
       })
     );
+    broadcastAll({ type: 'presence:count', playersOnline: clients.size });
 
     ws.on('message', (raw) => {
       try {
@@ -658,6 +799,7 @@ async function startServer() {
               platform: client.platform,
               status: client.status,
               currentMap: client.status === 'in_match' ? client.mapId : undefined,
+              playersOnline: clients.size,
             });
             break;
           }
@@ -678,8 +820,47 @@ async function startServer() {
           }
 
           case 'room:join': {
-            client.roomCode = String(msg.roomCode ?? 'ALPHA-1');
-            client.mapId = (msg.mapId ?? 'hyperion_atrium') as MapId;
+            const prevRoom = client.roomCode;
+            if (prevRoom && prevRoom !== msg.roomCode) {
+              client.roomCode = '';
+              broadcastRoom(prevRoom, { type: 'room:peer_left', id: clientId }, clientId);
+              cleanupRoomIfEmpty(prevRoom, nowMs);
+            }
+
+            const mode: GameMode = msg.mode === 'tdm' ? 'tdm' : 'ffa';
+            let targetRoom = String(msg.roomCode ?? 'FFA-1');
+            let targetMap = ((msg.mapId && msg.mapId in MAPS ? msg.mapId : 'hyperion_atrium') as MapId);
+
+            // Enforce max 12 connected players per room
+            if (targetRoom !== prevRoom && getRoomLiveCount(targetRoom) >= MAX_PLAYERS_PER_ROOM) {
+              const overflow = allocateMatchmakingRoom(getActiveMatchRooms(nowMs), mode, {
+                maxPlayers: MAX_PLAYERS_PER_ROOM,
+                excludeRoomCode: targetRoom,
+              });
+              targetRoom = overflow.roomCode;
+              targetMap = overflow.mapId;
+            }
+
+            let reg = roomRegistry.get(targetRoom);
+            if (!reg) {
+              reg = {
+                roomCode: targetRoom,
+                mode,
+                mapId: targetMap,
+                reservations: [],
+                lastActiveMs: nowMs,
+              };
+              roomRegistry.set(targetRoom, reg);
+            }
+            pruneReservations(reg, nowMs);
+            if (reg.reservations.length > 0) {
+              reg.reservations.shift();
+            }
+            reg.lastActiveMs = nowMs;
+
+            client.roomCode = targetRoom;
+            client.gameMode = reg.mode;
+            client.mapId = reg.mapId;
             client.status = 'in_match';
             client.x = Number(msg.x) || 0;
             client.y = Number(msg.y) || 0;
@@ -705,7 +886,15 @@ async function startServer() {
                 score: c.score,
               }));
 
-            ws.send(JSON.stringify({ type: 'room:peers', peers }));
+            ws.send(
+              JSON.stringify({
+                type: 'room:peers',
+                peers,
+                roomCode: client.roomCode,
+                mapId: client.mapId,
+                playersOnline: clients.size,
+              })
+            );
             broadcastRoom(
               client.roomCode,
               {
@@ -744,6 +933,7 @@ async function startServer() {
             client.status = 'lobby';
             if (oldRoom) {
               broadcastRoom(oldRoom, { type: 'room:peer_left', id: clientId }, clientId);
+              cleanupRoomIfEmpty(oldRoom, nowMs);
             }
             broadcastAll({
               type: 'presence:update',
@@ -853,12 +1043,14 @@ async function startServer() {
       clients.delete(clientId);
       if (oldRoom) {
         broadcastRoom(oldRoom, { type: 'room:peer_left', id: clientId });
+        cleanupRoomIfEmpty(oldRoom);
       }
       broadcastAll({
         type: 'presence:update',
         nickname: client.nickname,
         platform: client.platform,
         status: 'offline',
+        playersOnline: clients.size,
       });
     });
   });

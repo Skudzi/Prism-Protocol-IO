@@ -94,11 +94,36 @@ export function disposeAvatarRig(rig: AnimatedAvatarRig) {
   (rig.spawnShieldRing.material as THREE.Material).dispose();
 }
 
+export function disposeObject3D(root: THREE.Object3D) {
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (mesh.geometry) {
+      mesh.geometry.dispose();
+    }
+    const mats = Array.isArray(mesh.material)
+      ? mesh.material
+      : mesh.material
+      ? [mesh.material]
+      : [];
+    for (const mat of mats) {
+      if (!mat) continue;
+      const anyMat = mat as unknown as Record<string, unknown>;
+      for (const texKey of ['map', 'bumpMap', 'roughnessMap', 'emissiveMap', 'normalMap', 'aoMap']) {
+        const tex = anyMat[texKey];
+        if (tex && typeof (tex as THREE.Texture).dispose === 'function') {
+          (tex as THREE.Texture).dispose();
+        }
+      }
+      mat.dispose();
+    }
+  });
+}
+
 export function buildWeaponViewModel(
   weaponId: WeaponId,
   skin: WeaponSkinDef,
   avatarSkin?: AvatarSkinDef,
-  options?: { disableClearcoat?: boolean }
+  options?: { disableClearcoat?: boolean; weaponOnly?: boolean }
 ): THREE.Group {
   const group = new THREE.Group();
   const pbr = createWeaponPBRTextures(skin);
@@ -601,6 +626,7 @@ export function buildWeaponViewModel(
   }
 
   // First-person Tactical Gloved Hands & Cordura Forearm Sleeves holding the weapon
+  if (!options?.weaponOnly) {
   const effectiveAvatarSkin: AvatarSkinDef = avatarSkin ?? {
     id: 'vanguard_cyan',
     name: 'Vanguard Cyan',
@@ -743,6 +769,7 @@ export function buildWeaponViewModel(
   leftForearm.position.copy(wristAnchor).addScaledVector(forearmAxis, -(0.06 + sleeveLen * 0.5));
   leftForearm.quaternion.setFromUnitVectors(upAxis, forearmAxis);
   group.add(leftForearm);
+  }
 
   return group;
 }

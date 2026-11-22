@@ -7,53 +7,42 @@ import { t } from '../i18n/translations';
 
 interface MapsPanelProps {
   selectedMap: MapId;
-  manualMapSelected: boolean;
   lang: LanguageCode;
-  onSelectMap: (id: MapId) => void;
-  onDeploy: (id: MapId) => void;
-  onEnableRandomMap: () => void;
+  onPreviewMap: (id: MapId) => void;
+  onDeployRandom: () => void;
 }
 
 export const MapsPanel: React.FC<MapsPanelProps> = ({
   selectedMap,
-  manualMapSelected,
   lang,
-  onSelectMap,
-  onDeploy,
-  onEnableRandomMap,
+  onPreviewMap,
+  onDeployRandom,
 }) => {
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 px-4 py-2.5">
-        <div className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
-          <Shuffle className={`h-4 w-4 shrink-0 ${!manualMapSelected ? 'text-cyan-500' : 'text-slate-400'}`} />
-          <span>
-            {!manualMapSelected ? t(lang, 'map.randomActive') : t(lang, 'map.randomMode')}
-          </span>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-4 py-2.5">
+        <div className="flex items-center gap-2 text-xs text-slate-800 dark:text-slate-200">
+          <Shuffle className="h-4 w-4 shrink-0 text-cyan-500" />
+          <span>{t(lang, 'map.randomActive')}</span>
         </div>
         <button
           type="button"
-          data-testid="random-map-toggle"
-          onClick={onEnableRandomMap}
-          disabled={!manualMapSelected}
-          className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-            !manualMapSelected
-              ? 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 cursor-default'
-              : 'bg-cyan-500 text-slate-950 hover:bg-cyan-400 cursor-pointer'
-          }`}
+          data-testid="maps-deploy-random-btn"
+          onClick={onDeployRandom}
+          className="rounded-md bg-cyan-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-cyan-400 transition-colors cursor-pointer"
         >
-          {!manualMapSelected ? t(lang, 'cta.equipped') : t(lang, 'map.useRandom')}
+          {t(lang, 'cta.deploy')}
         </button>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {MAP_LIST.map((m) => {
-          const active = manualMapSelected && selectedMap === m.id;
+          const previewing = selectedMap === m.id;
           return (
             <div
               key={m.id}
               className={`flex flex-col justify-between rounded-lg border p-4 transition-colors ${
-                active
+                previewing
                   ? 'border-cyan-500 bg-cyan-500/10'
                   : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70'
               }`}
@@ -87,18 +76,18 @@ export const MapsPanel: React.FC<MapsPanelProps> = ({
               <div className="mt-4 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => onSelectMap(m.id)}
+                  onClick={() => onPreviewMap(m.id)}
                   className={`flex-1 rounded px-3 py-1.5 text-xs font-semibold cursor-pointer ${
-                    active
+                    previewing
                       ? 'bg-cyan-500 text-slate-950'
                       : 'bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700'
                   }`}
                 >
-                  {active ? t(lang, 'cta.equipped') : 'Preview'}
+                  {previewing ? 'Previewing' : 'Preview'}
                 </button>
                 <button
                   type="button"
-                  onClick={() => onDeploy(m.id)}
+                  onClick={onDeployRandom}
                   className="rounded bg-slate-900 dark:bg-white px-3 py-1.5 text-xs font-semibold text-white dark:text-slate-950 hover:opacity-90 cursor-pointer"
                 >
                   {t(lang, 'nav.play')}

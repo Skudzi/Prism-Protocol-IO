@@ -268,6 +268,33 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             />
           </div>
 
+          <div className="flex items-center justify-between gap-2 text-sm">
+            <span className="text-slate-700 dark:text-slate-300">
+              {t(lang, 'settings.aimMode')}
+            </span>
+            <div className="inline-flex rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-0.5">
+              {(['hold', 'toggle'] as const).map((mode) => {
+                const active = (settings.aimMode ?? 'hold') === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    data-testid={`aim-mode-${mode}`}
+                    aria-pressed={active}
+                    onClick={() => onUpdateSettings({ ...settings, aimMode: mode })}
+                    className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors cursor-pointer ${
+                      active
+                        ? 'bg-cyan-500 text-slate-950'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {t(lang, mode === 'hold' ? 'settings.aimHold' : 'settings.aimToggle')}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="space-y-2.5 pt-1 text-sm">
             <label className="flex items-center justify-between cursor-pointer">
               <span className="text-slate-700 dark:text-slate-300">

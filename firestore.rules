@@ -115,18 +115,28 @@ service cloud.firestore {
         isValidWeaponStatsMap(stats.weaponStats);
     }
 
+    function isValidEquippedWeaponSkinsMap(ws) {
+      return ws is map &&
+        ws.keys().hasAll(['pulse_carbine', 'volt_scatter', 'helios_rail', 'arc_repeater']) &&
+        ws.keys().hasOnly(['pulse_carbine', 'volt_scatter', 'helios_rail', 'arc_repeater']) &&
+        isValidSkinId(ws.pulse_carbine) &&
+        isValidSkinId(ws.volt_scatter) &&
+        isValidSkinId(ws.helios_rail) &&
+        isValidSkinId(ws.arc_repeater);
+    }
+
     function isValidSettings(s) {
       return s is map &&
         s.keys().hasAll([
           'graphicsQuality', 'shadowQuality', 'renderDistance', 'vsync', 'showFps',
-          'fpsCap', 'fov', 'mouseSensitivity', 'shadowsEnabled', 'particlesEnabled',
+          'fpsCap', 'fov', 'mouseSensitivity', 'aimMode', 'shadowsEnabled', 'particlesEnabled',
           'audioEnabled', 'masterVolume', 'controllerEnabled', 'controllerSensitivity',
           'controllerDeadzone', 'controllerInvertY', 'controllerVibration',
           'darkMode', 'language', 'crossPlatformEnabled'
         ]) &&
         s.keys().hasOnly([
           'graphicsQuality', 'shadowQuality', 'renderDistance', 'vsync', 'showFps',
-          'fpsCap', 'fov', 'mouseSensitivity', 'shadowsEnabled', 'particlesEnabled',
+          'fpsCap', 'fov', 'mouseSensitivity', 'aimMode', 'shadowsEnabled', 'particlesEnabled',
           'audioEnabled', 'masterVolume', 'controllerEnabled', 'controllerSensitivity',
           'controllerDeadzone', 'controllerInvertY', 'controllerVibration',
           'darkMode', 'language', 'crossPlatformEnabled'
@@ -139,6 +149,7 @@ service cloud.firestore {
         s.fpsCap is string && s.fpsCap in ['screen_locked', '60', '120', '165', '240', 'unlimited'] &&
         isNonNegInt(s.fov, 150) &&
         isNonNegNumber(s.mouseSensitivity, 20) &&
+        s.aimMode is string && s.aimMode in ['hold', 'toggle'] &&
         s.shadowsEnabled is bool &&
         s.particlesEnabled is bool &&
         s.audioEnabled is bool &&
@@ -185,7 +196,7 @@ service cloud.firestore {
           'battlePassPremium', 'passSeasonNumber', 'passSeasonEndsAt',
           'claimedFreeTiers', 'claimedPremiumTiers',
           'unlockedWeaponSkins', 'unlockedAvatarSkins', 'equippedWeaponId',
-          'equippedWeaponSkinId', 'equippedAvatarSkinId', 'tutorialCompleted',
+          'equippedWeaponSkinId', 'equippedWeaponSkins', 'equippedAvatarSkinId', 'tutorialCompleted',
           'easterEggUnlocked', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
           'createdAt', 'updatedAt'
         ]) &&
@@ -194,7 +205,7 @@ service cloud.firestore {
           'battlePassPremium', 'passSeasonNumber', 'passSeasonEndsAt',
           'claimedFreeTiers', 'claimedPremiumTiers',
           'unlockedWeaponSkins', 'unlockedAvatarSkins', 'equippedWeaponId',
-          'equippedWeaponSkinId', 'equippedAvatarSkinId', 'tutorialCompleted',
+          'equippedWeaponSkinId', 'equippedWeaponSkins', 'equippedAvatarSkinId', 'tutorialCompleted',
           'easterEggUnlocked', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
           'createdAt', 'updatedAt'
         ]) &&
@@ -211,11 +222,12 @@ service cloud.firestore {
         isValidIsoTimestamp(data.passSeasonEndsAt) &&
         isValidTierList(data.claimedFreeTiers, 50) &&
         isValidTierList(data.claimedPremiumTiers, 50) &&
-        isValidSkinList(data.unlockedWeaponSkins, 100) &&
+        isValidSkinList(data.unlockedWeaponSkins, 250) &&
         isValidSkinList(data.unlockedAvatarSkins, 100) &&
         data.equippedWeaponId is string &&
         data.equippedWeaponId in ['pulse_carbine', 'volt_scatter', 'helios_rail', 'arc_repeater'] &&
         isValidSkinId(data.equippedWeaponSkinId) &&
+        isValidEquippedWeaponSkinsMap(data.equippedWeaponSkins) &&
         isValidSkinId(data.equippedAvatarSkinId) &&
         data.tutorialCompleted is bool &&
         data.easterEggUnlocked is bool &&
@@ -239,7 +251,7 @@ service cloud.firestore {
         'battlePassPremium', 'passSeasonNumber', 'passSeasonEndsAt',
         'claimedFreeTiers', 'claimedPremiumTiers',
         'unlockedWeaponSkins', 'unlockedAvatarSkins', 'equippedWeaponId',
-        'equippedWeaponSkinId', 'equippedAvatarSkinId', 'tutorialCompleted',
+        'equippedWeaponSkinId', 'equippedWeaponSkins', 'equippedAvatarSkinId', 'tutorialCompleted',
         'easterEggUnlocked', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
         'updatedAt'
       ]);

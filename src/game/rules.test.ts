@@ -1,7 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AVATAR_SKINS, createDefaultProfile, DEFAULT_SETTINGS, MAP_LIST, MAPS, PASS_SEASON_DURATION_MS, WEAPONS, WEAPON_SKINS } from './catalog';
 import {
+  AVATAR_SKINS,
+  CHEST_CATALOG,
+  createDefaultProfile,
+  DEFAULT_SETTINGS,
+  MAP_LIST,
+  MAPS,
+  PASS_SEASON_DURATION_MS,
+  RARITY_META,
+  RARITY_ORDER,
+  WEAPONS,
+  WEAPON_SKINS,
+} from './catalog';
+import {
+  allocateMatchmakingRoom,
   applyControllerDeadzone,
   applyIncomingDamageWithSpawnProtection,
   applyMatchRewards,
@@ -21,7 +34,11 @@ import {
   computeAdaptivePerfStep,
   createSpawnProtection,
   detectLowPerfGpuString,
+  equipWeaponSkin,
   getBattlePassCountdown,
+  getChestPoolForRarity,
+  getChestRarityPercentages,
+  getChestWeaponPercentages,
   getHealOrbScheduleTimes,
   getKillRankReward,
   getOperatorWeaponBodyStyle,
@@ -32,12 +49,15 @@ import {
   isSpawnProtectionActive,
   MAX_MATCH_CREDITS,
   MAX_MATCH_XP,
+  MAX_PLAYERS_PER_ROOM,
   mergeLocalAndCloudProfiles,
   NORMAL_JUMP_VELOCITY,
+  normalizeEquippedWeaponSkins,
   pickOpenHealOrbPosition,
   pickRandomMapId,
   purchaseStoreItem,
   resolvePlayerMovement,
+  rollChestOpen,
   sampleKillCamClip,
   shouldAutoReload,
   sortLeaderboardEntries,
@@ -1010,3 +1030,228 @@ test('hasProfileCloudDiff detects Battle Pass, loadout, weapon stats, and settin
   };
   assert.equal(hasProfileCloudDiff(a, withWeaponKill), true);
 });
+
+test('Skin catalog defines ~15 chest skins per colored rarity and differentiates weapon drop odds', () => {
+  assert.deepEqual(RARITY_ORDER, ['common', 'uncommon', 'rare', 'epic', 'mythic', 'legendary']);
+  const expectedColors = ['#cbd5e1', '#22c55e', '#3b82f6', '#d946ef', '#ef4444', '#eab308'];
+  RARITY_ORDER.forEach((rarity, idx) => {
+    assert.equal(RARITY_META[rarity].colorHex, expectedColors[idx]);
+    const chestSkins = WEAPON_SKINS.filter((s) => s.chestEligible !== false && s.rarity === rarity);
+    assert.ok(chestSkins.length >= 15, `Expected at least 15 chest skins in ${rarity}, got ${chestSkins.length}`);
+  });
+
+  // Weapon drop percentages must differ across weapons (e.g. sniper vs SMG/AR in Chest 1 vs Chest 3)
+  const chest1Weapons = getChestWeaponPercentages('vanguard_crate');
+  const chest3Weapons = getChestWeaponPercentages('prism_overlord');
+  assert.notEqual(chest1Weapons.helios_rail, chest1Weapons.pulse_carbine);
+  assert.ok(
+    chest3Weapons.helios_rail > chest1Weapons.helios_rail,
+    'Elite chest should favor sniper/high-tier finishes more than starter chest'
+  );
+});
+
+test('Supply chests enforce 1000/1500/2000 CR pricing, exact % odds, 0.5% Aurum Sovereign drop, and duplicate CR refund', () => {
+  assert.equal(CHEST_CATALOG.vanguard_crate.price, 1000);
+  assert.equal(CHEST_CATALOG.apex_vault.price, 1500);
+  assert.equal(CHEST_CATALOG.prism_overlord.price, 2000);
+
+  for (const chestId of ['vanguard_crate', 'apex_vault', 'prism_overlord'] as const) {
+    const pcts = getChestRarityPercentages(chestId);
+    const total = pcts.reduce((sum, r) => sum + r.chancePct, 0);
+    assert.ok(Math.abs(total - 100) < 1e-4, `Total rarity odds for ${chestId} must equal 100%, got ${total}`);
+  }
+
+  // Chest 1: max Epic (0% Mythic, 0% Legendary)
+  assert.equal(CHEST_CATALOG.vanguard_crate.rarityChances.mythic, 0);
+  assert.equal(CHEST_CATALOG.vanguard_crate.rarityChances.legendary, 0);
+
+  // Chest 2: max Mythic + ONLY aurum_sovereign Legendary at exact 0.5%
+  assert.equal(CHEST_CATALOG.apex_vault.rarityChances.legendary, 0.5);
+  const chest2LegPool = getChestPoolForRarity(CHEST_CATALOG.apex_vault, 'legendary');
+  assert.deepEqual(
+    chest2LegPool.map((s) => s.id),
+    ['aurum_sovereign']
+  );
+
+  // Chest 3: Rare - Legendary only (0% common, 0% uncommon)
+  assert.equal(CHEST_CATALOG.prism_overlord.rarityChances.common, 0);
+  assert.equal(CHEST_CATALOG.prism_overlord.rarityChances.uncommon, 0);
+  assert.ok(CHEST_CATALOG.prism_overlord.rarityChances.legendary > 0);
+
+  // Insufficient CR rejection
+  const broke = createDefaultProfile('LowCr');
+  const failOpen = rollChestOpen(broke, 'vanguard_crate');
+  assert.equal(failOpen.ok, false);
+
+  // High roll (0.999) in Chest 2 triggers exact 0.5% Legendary Aurum Sovereign
+  const rich = { ...broke, credits: 5000 };
+  const legRoll = rollChestOpen(rich, 'apex_vault', () => 0.998);
+  assert.equal(legRoll.ok, true);
+  assert.equal(legRoll.skin?.id, 'aurum_sovereign');
+  assert.equal(legRoll.isDuplicate, false);
+  assert.equal(legRoll.profile.credits, 3500);
+  assert.ok(legRoll.profile.unlockedWeaponSkins.includes('aurum_sovereign'));
+
+  // Re-rolling the exact same owned skin grants duplicate salvage CR refund
+  const dupRoll = rollChestOpen(legRoll.profile, 'apex_vault', () => 0.998);
+  assert.equal(dupRoll.ok, true);
+  assert.equal(dupRoll.isDuplicate, true);
+  assert.equal(dupRoll.refundCredits, RARITY_META.legendary.salvageCredits);
+  assert.equal(
+    dupRoll.profile.credits,
+    3500 - 1500 + RARITY_META.legendary.salvageCredits
+  );
+});
+
+test('allocateMatchmakingRoom shares same random-map room up to 12 players per mode then opens a new random map', () => {
+  assert.equal(MAX_PLAYERS_PER_ROOM, 12);
+
+  // Player 1 joins TDM -> opens TDM-1 on a random map
+  const rooms: Array<{ roomCode: string; mode: 'tdm' | 'ffa'; mapId: keyof typeof MAPS; playerCount: number }> = [];
+  const p1 = allocateMatchmakingRoom(rooms, 'tdm', { rng: () => 0.12 });
+  assert.equal(p1.isNewRoom, true);
+  assert.equal(p1.roomCode, 'TDM-1');
+  rooms.push({ roomCode: p1.roomCode, mode: 'tdm', mapId: p1.mapId, playerCount: 1 });
+
+  // Players 2..12 joining TDM must be placed in the exact same TDM-1 room & map
+  for (let p = 2; p <= 12; p++) {
+    const next = allocateMatchmakingRoom(rooms, 'tdm', { rng: () => 0.85 });
+    assert.equal(next.isNewRoom, false);
+    assert.equal(next.roomCode, p1.roomCode);
+    assert.equal(next.mapId, p1.mapId);
+    rooms[0].playerCount = p;
+  }
+
+  // Player joining FFA gets a separate FFA room without colliding with full TDM-1
+  const ffa1 = allocateMatchmakingRoom(rooms, 'ffa', { rng: () => 0.4 });
+  assert.equal(ffa1.isNewRoom, true);
+  assert.equal(ffa1.mode, 'ffa');
+  assert.notEqual(ffa1.roomCode, p1.roomCode);
+
+  // 13th TDM player arrives when TDM-1 has 12 players -> opens TDM-2 on a DIFFERENT random map
+  const p13 = allocateMatchmakingRoom(rooms, 'tdm', { rng: () => 0.12 });
+  assert.equal(p13.isNewRoom, true);
+  assert.equal(p13.roomCode, 'TDM-2');
+  assert.notEqual(p13.mapId, p1.mapId);
+});
+
+test('mergeLocalAndCloudProfiles respects newer edited local nickname instead of resetting to old cloud nickname', () => {
+  const cloud = {
+    ...createDefaultProfile('GoogleAutoName'),
+    accountId: 'uid-google-1',
+    lastSyncedAt: '2026-11-20T10:00:00.000Z',
+  };
+  const localEdited = {
+    ...cloud,
+    nickname: 'CustomAce99',
+    lastSyncedAt: '2026-11-20T10:02:00.000Z',
+  };
+  const merged = mergeLocalAndCloudProfiles(localEdited, cloud);
+  assert.equal(merged.nickname, 'CustomAce99');
+});
+
+test('Four independent weapon skin slots allow Solar Circuit on AR and Prism Relic on Sniper simultaneously', () => {
+  const base = createDefaultProfile('LoadoutPro');
+  const profile = {
+    ...base,
+    equippedWeaponId: 'pulse_carbine' as const,
+    unlockedWeaponSkins: [...base.unlockedWeaponSkins, 'solar_flare', 'prism_relic'],
+  };
+
+  // Equip Solar Circuit (solar_flare) on AR (pulse_carbine)
+  const step1 = equipWeaponSkin(profile, 'solar_flare', 'pulse_carbine');
+  assert.equal(step1.ok, true);
+  assert.equal(step1.profile.equippedWeaponSkins.pulse_carbine, 'solar_flare');
+  assert.equal(step1.profile.equippedWeaponId, 'pulse_carbine');
+
+  // Equip Prism Relic (prism_relic) on Sniper (helios_rail) without changing AR skin or active weapon
+  const step2 = equipWeaponSkin(step1.profile, 'prism_relic', 'helios_rail');
+  assert.equal(step2.ok, true);
+  assert.equal(step2.profile.equippedWeaponSkins.pulse_carbine, 'solar_flare');
+  assert.equal(step2.profile.equippedWeaponSkins.helios_rail, 'prism_relic');
+  assert.equal(step2.profile.equippedWeaponId, 'pulse_carbine');
+  assert.equal(step2.profile.equippedWeaponSkinId, 'solar_flare');
+
+  // Purchasing/equipping for another slot via purchaseStoreItem preserves active weapon & other slots
+  const rich = { ...step2.profile, credits: 5000 };
+  const step3 = purchaseStoreItem(rich, 'weapon_skin', 'obsidian_gold', 'volt_scatter');
+  assert.equal(step3.ok, true);
+  assert.equal(step3.profile.equippedWeaponSkins.volt_scatter, 'obsidian_gold');
+  assert.equal(step3.profile.equippedWeaponSkins.pulse_carbine, 'solar_flare');
+  assert.equal(step3.profile.equippedWeaponSkins.helios_rail, 'prism_relic');
+  assert.equal(step3.profile.equippedWeaponId, 'pulse_carbine');
+});
+
+test('normalizeEquippedWeaponSkins migrates legacy single skin and repairs invalid skin IDs', () => {
+  const normalized = normalizeEquippedWeaponSkins(
+    { pulse_carbine: 'invalid_skin_xyz' },
+    'prism_relic',
+    'helios_rail'
+  );
+  assert.equal(normalized.pulse_carbine, 'cobalt_standard');
+  assert.equal(normalized.helios_rail, 'prism_relic');
+  assert.equal(normalized.volt_scatter, 'cobalt_standard');
+  assert.equal(normalized.arc_repeater, 'cobalt_standard');
+});
+
+test('Rarity color styles skin label only: Legendary includes pink/cyan/emerald 3D paint finishes', () => {
+  assert.equal(RARITY_META.legendary.colorHex, '#eab308');
+  const legendarySkins = WEAPON_SKINS.filter((s) => s.rarity === 'legendary');
+  const nonYellowLegendary = legendarySkins.filter(
+    (s) =>
+      s.primaryColor.toLowerCase() !== '#eab308' &&
+      s.primaryColor.toLowerCase() !== '#facc15' &&
+      s.primaryColor.toLowerCase() !== '#fde047'
+  );
+  assert.ok(
+    nonYellowLegendary.length >= 10,
+    `Expected diverse non-yellow 3D paint finishes in Legendary tier, found ${nonYellowLegendary.length}`
+  );
+  // Specifically verify pink & cyan legendary skins exist
+  assert.ok(
+    legendarySkins.some((s) => s.primaryColor.toLowerCase() === '#ec4899' || s.primaryColor.toLowerCase() === '#db2777'),
+    'Expected pink Legendary 3D finish'
+  );
+  assert.ok(
+    legendarySkins.some((s) => s.primaryColor.toLowerCase() === '#083344' && s.secondaryColor.toLowerCase() === '#06b6d4'),
+    'Expected cyan Legendary 3D finish'
+  );
+});
+
+test('Settings default aimMode to hold and profile diff/merge tracks aimMode and equippedWeaponSkins', () => {
+  assert.equal(DEFAULT_SETTINGS.aimMode, 'hold');
+
+  const a = createDefaultProfile('SyncTester');
+  const b = {
+    ...a,
+    settings: { ...a.settings, aimMode: 'toggle' as const },
+  };
+  assert.equal(hasProfileCloudDiff(a, b), true);
+
+  const c = {
+    ...a,
+    equippedWeaponSkins: { ...a.equippedWeaponSkins, arc_repeater: 'solar_flare' },
+  };
+  assert.equal(hasProfileCloudDiff(a, c), true);
+
+  const newerCloud = {
+    ...a,
+    unlockedWeaponSkins: [...a.unlockedWeaponSkins, 'solar_flare', 'prism_relic'],
+    equippedWeaponSkins: {
+      ...a.equippedWeaponSkins,
+      pulse_carbine: 'solar_flare',
+      helios_rail: 'prism_relic',
+    },
+    settings: { ...a.settings, aimMode: 'toggle' as const },
+    lastSyncedAt: '2026-11-22T12:00:00.000Z',
+  };
+  const olderLocal = {
+    ...a,
+    lastSyncedAt: '2026-11-22T10:00:00.000Z',
+  };
+  const merged = mergeLocalAndCloudProfiles(olderLocal, newerCloud);
+  assert.equal(merged.equippedWeaponSkins.pulse_carbine, 'solar_flare');
+  assert.equal(merged.equippedWeaponSkins.helios_rail, 'prism_relic');
+  assert.equal(merged.settings.aimMode, 'toggle');
+});
+

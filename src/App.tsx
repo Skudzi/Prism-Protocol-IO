@@ -47,14 +47,18 @@ import {
   claimBattlePassTier,
   hasProfileCloudDiff,
   mergeLocalAndCloudProfiles,
+  normalizeEquippedWeaponSkins,
   normalizeWeaponStats,
   pickRandomMapId,
   purchaseStoreItem,
+  rollChestOpen,
   syncBattlePassSeason,
   upgradeBattlePassPremium,
 } from './game/rules';
 import {
   ChatMessage,
+  ChestId,
+  ChestOpenResult,
   FriendEntry,
   GameMode,
   GameScreenState,
@@ -63,6 +67,7 @@ import {
   LanguageCode,
   MapId,
   MatchSummary,
+  MatchmakingRoomInfo,
   PartyInvite,
   PlatformType,
   PlayerCloudProfile,
@@ -111,6 +116,9 @@ const INITIAL_HUD: HudSnapshot = {
   spawnProtectionRemainingMs: 0,
   killedBy: null,
   hasGamepad: false,
+  scoreboardHeld: false,
+  playersOnlineCount: 1,
+  scoreboardEntries: [],
   tutorialStep: 1,
   tutorialDronesHit: 0,
   easterEggUnlockedNow: false,
@@ -131,8 +139,15 @@ const STORAGE_TOKEN_KEY = 'prism_protocol_token_v1';
 const STORAGE_PENDING_SYNC_KEY = 'prism_protocol_pending_sync_v1';
 
 function normalizeProfile(raw: PlayerCloudProfile): PlayerCloudProfile {
+  const normalizedSlots = normalizeEquippedWeaponSkins(
+    raw.equippedWeaponSkins,
+    raw.equippedWeaponSkinId,
+    raw.equippedWeaponId
+  );
   const normalizedBase: PlayerCloudProfile = {
     ...raw,
+    equippedWeaponSkins: normalizedSlots,
+    equippedWeaponSkinId: normalizedSlots[raw.equippedWeaponId] ?? raw.equippedWeaponSkinId,
     stats: {
       ...raw.stats,
       weaponStats: normalizeWeaponStats(raw.stats?.weaponStats),
@@ -140,6 +155,7 @@ function normalizeProfile(raw: PlayerCloudProfile): PlayerCloudProfile {
     settings: {
       ...DEFAULT_SETTINGS,
       ...(raw.settings ?? {}),
+      aimMode: raw.settings?.aimMode === 'toggle' ? 'toggle' : 'hold',
     },
   };
   return syncBattlePassSeason(normalizedBase).profile;
@@ -193,9 +209,8 @@ export default function App() {
   const lastPlayedMapRef = useRef<MapId | undefined>(undefined);
   const [screenState, setScreenState] = useState<GameScreenState>('title');
   const [selectedMap, setSelectedMap] = useState<MapId>('hyperion_atrium');
-  const [manualMapSelected, setManualMapSelected] = useState(false);
   const [gameMode, setGameMode] = useState<GameMode>('ffa');
-  const [roomCode, setRoomCode] = useState<string>('ALPHA-1');
+  const [roomCode, setRoomCode] = useState<string>('FFA-1');
   const [activeTab, setActiveTab] = useState<HubTab>(null);
   const [isTutorial, setIsTutorial] = useState(false);
   const [hud, setHud] = useState<HudSnapshot>(INITIAL_HUD);
@@ -672,14 +687,15 @@ export default function App() {
       wsRef.current = ws;
 
       ws.onopen = () => {
+        const cur = profileRef.current;
         ws.send(
           JSON.stringify({
             type: 'auth',
-            nickname: profile.nickname,
-            platform: profile.platform,
-            weaponId: profile.equippedWeaponId,
-            avatarSkinId: profile.equippedAvatarSkinId,
-            status: screenState === 'playing' ? 'in_match' : 'lobby',
+            nickname: cur.nickname,
+            platform: cur.platform,
+            weaponId: cur.equippedWeaponId,
+            avatarSkinId: cur.equippedAvatarSkinId,
+            status: 'lobby',
           })
         );
       };
@@ -692,8 +708,19 @@ export default function App() {
               if (Array.isArray(msg.chatHistory)) {
                 setChatMessages(msg.chatHistory);
               }
+              if (typeof msg.playersOnline === 'number') {
+                engineRef.current?.setPlayersOnlineCount(msg.playersOnline);
+              }
+              break;
+            case 'presence:count':
+              if (typeof msg.playersOnline === 'number') {
+                engineRef.current?.setPlayersOnlineCount(msg.playersOnline);
+              }
               break;
             case 'presence:update':
+              if (typeof msg.playersOnline === 'number') {
+                engineRef.current?.setPlayersOnlineCount(msg.playersOnline);
+              }
               setFriends((prev) =>
                 prev.map((f) =>
                   f.nickname.toLowerCase() === String(msg.nickname).toLowerCase()
@@ -724,6 +751,9 @@ export default function App() {
                 for (const p of msg.peers) {
                   peersRef.current.set(p.id, p);
                 }
+              }
+              if (typeof msg.playersOnline === 'number') {
+                engineRef.current?.setPlayersOnlineCount(msg.playersOnline);
               }
               engineRef.current?.syncRemotePeers(Array.from(peersRef.current.values()));
               break;
@@ -777,7 +807,28 @@ export default function App() {
       clearTimeout(reconnectTimer);
       wsRef.current?.close();
     };
-  }, [profile.nickname, profile.platform]);
+  }, []);
+
+  useEffect(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'auth',
+          nickname: profile.nickname,
+          platform: profile.platform,
+          weaponId: profile.equippedWeaponId,
+          avatarSkinId: profile.equippedAvatarSkinId,
+          status: screenState === 'playing' ? 'in_match' : 'lobby',
+        })
+      );
+    }
+  }, [
+    profile.nickname,
+    profile.platform,
+    profile.equippedWeaponId,
+    profile.equippedAvatarSkinId,
+    screenState,
+  ]);
 
   // Ref callbacks for isolated Three.js lifecycle
   const callbacksRef = useRef({
@@ -871,14 +922,24 @@ export default function App() {
           setMatchChatOpen((prev) => !prev);
         },
         onWeaponChanged: (weaponId) => {
-          setProfile((prev) =>
-            prev.equippedWeaponId === weaponId
-              ? prev
-              : { ...prev, equippedWeaponId: weaponId }
-          );
+          setProfile((prev) => {
+            if (prev.equippedWeaponId === weaponId) return prev;
+            const slots = normalizeEquippedWeaponSkins(
+              prev.equippedWeaponSkins,
+              prev.equippedWeaponSkinId,
+              prev.equippedWeaponId
+            );
+            return {
+              ...prev,
+              equippedWeaponId: weaponId,
+              equippedWeaponSkins: slots,
+              equippedWeaponSkinId: slots[weaponId] ?? prev.equippedWeaponSkinId,
+            };
+          });
         },
         onNetworkMove: (x, y, z, yaw) => {
           if (wsRef.current?.readyState === WebSocket.OPEN) {
+            const cur = profileRef.current;
             wsRef.current.send(
               JSON.stringify({
                 type: 'player:move',
@@ -886,8 +947,8 @@ export default function App() {
                 y,
                 z,
                 yaw,
-                weaponId: profile.equippedWeaponId,
-                avatarSkinId: profile.equippedAvatarSkinId,
+                weaponId: cur.equippedWeaponId,
+                avatarSkinId: cur.equippedAvatarSkinId,
               })
             );
           }
@@ -908,10 +969,16 @@ export default function App() {
         },
       }
     );
+    const initialSlots = normalizeEquippedWeaponSkins(
+      profile.equippedWeaponSkins,
+      profile.equippedWeaponSkinId,
+      profile.equippedWeaponId
+    );
     engine.setLoadout(
       profile.equippedWeaponId,
-      profile.equippedWeaponSkinId,
-      profile.equippedAvatarSkinId
+      initialSlots[profile.equippedWeaponId] ?? profile.equippedWeaponSkinId,
+      profile.equippedAvatarSkinId,
+      initialSlots
     );
     engineRef.current = engine;
 
@@ -927,12 +994,23 @@ export default function App() {
   }, [profile.settings, profile.keybinds]);
 
   useEffect(() => {
+    const slots = normalizeEquippedWeaponSkins(
+      profile.equippedWeaponSkins,
+      profile.equippedWeaponSkinId,
+      profile.equippedWeaponId
+    );
     engineRef.current?.setLoadout(
       profile.equippedWeaponId,
-      profile.equippedWeaponSkinId,
-      profile.equippedAvatarSkinId
+      slots[profile.equippedWeaponId] ?? profile.equippedWeaponSkinId,
+      profile.equippedAvatarSkinId,
+      slots
     );
-  }, [profile.equippedWeaponId, profile.equippedWeaponSkinId, profile.equippedAvatarSkinId]);
+  }, [
+    profile.equippedWeaponId,
+    profile.equippedWeaponSkinId,
+    profile.equippedWeaponSkins,
+    profile.equippedAvatarSkinId,
+  ]);
 
   useEffect(() => {
     engineRef.current?.setPlayerNickname(profile.nickname);
@@ -957,12 +1035,19 @@ export default function App() {
       setScreenState('playing');
       document.body.dataset.state = 'playing';
 
-      engineRef.current?.setLoadout(
-        profile.equippedWeaponId,
-        profile.equippedWeaponSkinId,
-        profile.equippedAvatarSkinId
+      const cur = profileRef.current;
+      const curSlots = normalizeEquippedWeaponSkins(
+        cur.equippedWeaponSkins,
+        cur.equippedWeaponSkinId,
+        cur.equippedWeaponId
       );
-      engineRef.current?.startMatch(mapId, tutorialMode, modeOverride, profile.nickname);
+      engineRef.current?.setLoadout(
+        cur.equippedWeaponId,
+        curSlots[cur.equippedWeaponId] ?? cur.equippedWeaponSkinId,
+        cur.equippedAvatarSkinId,
+        curSlots
+      );
+      engineRef.current?.startMatch(mapId, tutorialMode, modeOverride, cur.nickname);
 
       if (!tutorialMode && wsRef.current?.readyState === WebSocket.OPEN) {
         const sp = MAPS[mapId].spawns[0];
@@ -970,6 +1055,7 @@ export default function App() {
           JSON.stringify({
             type: 'room:join',
             roomCode: targetRoom,
+            mode: modeOverride,
             mapId,
             x: sp.x,
             y: sp.y,
@@ -978,28 +1064,44 @@ export default function App() {
         );
       }
     },
-    [
-      profile.equippedWeaponId,
-      profile.equippedWeaponSkinId,
-      profile.equippedAvatarSkinId,
-      profile.nickname,
-      roomCode,
-      gameMode,
-    ]
+    [roomCode, gameMode]
   );
 
-  const startNextRound = useCallback(() => {
-    const targetMap = manualMapSelected
-      ? selectedMap
-      : pickRandomMapId(lastPlayedMapRef.current);
-    startGameplay(targetMap, false);
-  }, [manualMapSelected, selectedMap, startGameplay]);
+  const startRandomMatchmaking = useCallback(
+    async (modeOverride?: GameMode) => {
+      const targetMode = modeOverride ?? gameMode;
+      try {
+        const res = await fetch('/api/matchmaking/find', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: targetMode,
+            excludeMapId: lastPlayedMapRef.current,
+          }),
+        });
+        if (res.ok) {
+          const info = (await res.json()) as MatchmakingRoomInfo;
+          setRoomCode(info.roomCode);
+          setGameMode(targetMode);
+          startGameplay(info.mapId, false, info.roomCode, targetMode);
+          return;
+        }
+      } catch {
+        // Fallback to local random map if matchmaking endpoint is unreachable
+      }
+      const fallbackMap = pickRandomMapId(lastPlayedMapRef.current);
+      const fallbackRoom = targetMode === 'tdm' ? 'TDM-1' : 'FFA-1';
+      setRoomCode(fallbackRoom);
+      startGameplay(fallbackMap, false, fallbackRoom, targetMode);
+    },
+    [gameMode, startGameplay]
+  );
 
   // Support ?autostart=1 and Enter/Space on Title screen
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('autostart') === '1') {
-      startNextRound();
+      void startRandomMatchmaking();
     }
   }, []);
 
@@ -1010,12 +1112,12 @@ export default function App() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (e.code === 'Enter' || e.code === 'Space') {
         e.preventDefault();
-        startNextRound();
+        void startRandomMatchmaking();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [screenState, activeTab, startNextRound]);
+  }, [screenState, activeTab, startRandomMatchmaking]);
 
   const handleReturnHub = () => {
     setScreenState('title');
@@ -1130,16 +1232,31 @@ export default function App() {
     }
   };
 
-  const handleUpdatePlatform = async (
+  const handleUpdateIdentity = async (
+    nickname: string,
     platform: PlatformType
   ): Promise<{ ok: boolean; error?: string }> => {
+    const cleanNick = sanitizeFirestoreNickname(nickname, profileRef.current.nickname);
     const updated: PlayerCloudProfile = {
-      ...profile,
+      ...profileRef.current,
+      nickname: cleanNick,
       platform,
+      lastSyncedAt: new Date().toISOString(),
     };
+    profileRef.current = updated;
     setProfile(updated);
     await syncCloudSave(updated);
     return { ok: true };
+  };
+
+  const handleOpenChest = (chestId: ChestId): ChestOpenResult => {
+    const res = rollChestOpen(profileRef.current, chestId);
+    if (res.ok) {
+      profileRef.current = res.profile;
+      setProfile(res.profile);
+      void syncCloudSave(res.profile);
+    }
+    return res;
   };
 
   const handleLogout = async () => {
@@ -1262,19 +1379,23 @@ export default function App() {
   };
 
   const updateSettings = (next: GameSettings) => {
-    setProfile((prev) => {
-      const updated = { ...prev, settings: next };
-      syncCloudSave(updated);
-      return updated;
-    });
+    const updated: PlayerCloudProfile = {
+      ...profileRef.current,
+      settings: next,
+    };
+    profileRef.current = updated;
+    setProfile(updated);
+    void syncCloudSave(updated);
   };
 
   const updateKeybinds = (next: Keybinds) => {
-    setProfile((prev) => {
-      const updated = { ...prev, keybinds: next };
-      syncCloudSave(updated);
-      return updated;
-    });
+    const updated: PlayerCloudProfile = {
+      ...profileRef.current,
+      keybinds: next,
+    };
+    profileRef.current = updated;
+    setProfile(updated);
+    void syncCloudSave(updated);
   };
 
   const tabItems: Array<{ id: Exclude<HubTab, null>; label: string; icon: React.ReactNode }> = [
@@ -1371,10 +1492,7 @@ export default function App() {
               </div>
 
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                {manualMapSelected
-                  ? t(lang, MAPS[selectedMap].nameKey as Parameters<typeof t>[1])
-                  : t(lang, 'map.randomMode')}{' '}
-                ·{' '}
+                {t(lang, 'map.randomMode')} ·{' '}
                 {t(lang, `weapon.${profile.equippedWeaponId}.name` as Parameters<typeof t>[1])}
               </p>
 
@@ -1401,7 +1519,7 @@ export default function App() {
                 <button
                   type="button"
                   data-start="true"
-                  onClick={startNextRound}
+                  onClick={() => void startRandomMatchmaking()}
                   className="flex items-center gap-2 rounded-lg bg-cyan-500 px-6 py-3 text-sm font-bold text-slate-950 hover:bg-cyan-400 transition-colors cursor-pointer"
                 >
                   <Play className="h-4 w-4 fill-current" />
@@ -1437,46 +1555,49 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-5">
+              <div key={activeTab} className="flex-1 overflow-y-auto p-5">
                 {activeTab === 'loadout' && (
                   <ArmoryPanel
                     profile={profile}
                     lang={lang}
                     onEquipWeapon={(weaponId: WeaponId) => {
                       setProfile((prev) => {
-                        const updated = { ...prev, equippedWeaponId: weaponId };
+                        const slots = normalizeEquippedWeaponSkins(
+                          prev.equippedWeaponSkins,
+                          prev.equippedWeaponSkinId,
+                          prev.equippedWeaponId
+                        );
+                        const updated: PlayerCloudProfile = {
+                          ...prev,
+                          equippedWeaponId: weaponId,
+                          equippedWeaponSkins: slots,
+                          equippedWeaponSkinId: slots[weaponId] ?? prev.equippedWeaponSkinId,
+                        };
                         syncCloudSave(updated);
                         return updated;
                       });
                     }}
-                    onActionSkin={(type, itemId) => {
+                    onActionSkin={(type, itemId, targetWeaponId) => {
                       setProfile((prev) => {
-                        const res = purchaseStoreItem(prev, type, itemId);
+                        const res = purchaseStoreItem(prev, type, itemId, targetWeaponId);
                         if (!res.ok) return prev;
                         syncCloudSave(res.profile);
                         return res.profile;
                       });
                     }}
+                    onOpenChest={handleOpenChest}
                   />
                 )}
 
                 {activeTab === 'maps' && (
                   <MapsPanel
                     selectedMap={selectedMap}
-                    manualMapSelected={manualMapSelected}
                     lang={lang}
-                    onSelectMap={(id) => {
-                      setManualMapSelected(true);
+                    onPreviewMap={(id) => {
                       setSelectedMap(id);
                       engineRef.current?.setMapPreview(id);
                     }}
-                    onDeploy={(id) => {
-                      setManualMapSelected(true);
-                      startGameplay(id, false);
-                    }}
-                    onEnableRandomMap={() => {
-                      setManualMapSelected(false);
-                    }}
+                    onDeployRandom={() => void startRandomMatchmaking()}
                   />
                 )}
 
@@ -1551,7 +1672,7 @@ export default function App() {
                     onGoogleSignIn={handleGoogleSignIn}
                     onLogin={handleLogin}
                     onRegister={handleRegister}
-                    onUpdatePlatform={handleUpdatePlatform}
+                    onUpdateIdentity={handleUpdateIdentity}
                     onLogout={handleLogout}
                     onSyncNow={() => void syncCloudSave(profile, true)}
                   />
@@ -1634,11 +1755,8 @@ export default function App() {
           engineRef.current?.respawnPlayer();
         }}
         onRestart={() => {
-          if (screenState === 'gameover') {
-            startNextRound();
-          } else {
-            startGameplay(selectedMap, false);
-          }
+          const targetMode = matchSummary?.gameMode ?? gameMode;
+          void startRandomMatchmaking(targetMode);
         }}
         onReturnHub={handleReturnHub}
         onSkipTutorial={() => {
@@ -1651,7 +1769,19 @@ export default function App() {
         }}
         onSelectWeapon={(id) => {
           engineRef.current?.setWeapon(id);
-          setProfile((prev) => ({ ...prev, equippedWeaponId: id }));
+          setProfile((prev) => {
+            const slots = normalizeEquippedWeaponSkins(
+              prev.equippedWeaponSkins,
+              prev.equippedWeaponSkinId,
+              prev.equippedWeaponId
+            );
+            return {
+              ...prev,
+              equippedWeaponId: id,
+              equippedWeaponSkins: slots,
+              equippedWeaponSkinId: slots[id] ?? prev.equippedWeaponSkinId,
+            };
+          });
         }}
         onUpdateSettings={updateSettings}
         onUpdateKeybinds={updateKeybinds}

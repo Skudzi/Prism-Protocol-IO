@@ -51,6 +51,7 @@
         "fpsCap": { "type": "string", "enum": ["screen_locked", "60", "120", "165", "240", "unlimited"] },
         "fov": { "type": "number" },
         "mouseSensitivity": { "type": "number" },
+        "aimMode": { "type": "string", "enum": ["hold", "toggle"] },
         "shadowsEnabled": { "type": "boolean" },
         "particlesEnabled": { "type": "boolean" },
         "audioEnabled": { "type": "boolean" },
@@ -73,6 +74,7 @@
         "fpsCap",
         "fov",
         "mouseSensitivity",
+        "aimMode",
         "shadowsEnabled",
         "particlesEnabled",
         "audioEnabled",
@@ -86,6 +88,18 @@
         "language",
         "crossPlatformEnabled"
       ]
+    },
+    "EquippedWeaponSkinsMap": {
+      "title": "EquippedWeaponSkinsMap",
+      "description": "Independent equipped skin ID for each of the four weapons.",
+      "type": "object",
+      "properties": {
+        "pulse_carbine": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "volt_scatter": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "helios_rail": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "arc_repeater": { "type": "string", "minLength": 1, "maxLength": 64 }
+      },
+      "required": ["pulse_carbine", "volt_scatter", "helios_rail", "arc_repeater"]
     },
     "PlayerKeybinds": {
       "title": "PlayerKeybinds",
@@ -161,6 +175,7 @@
           "minLength": 1,
           "maxLength": 64
         },
+        "equippedWeaponSkins": { "$ref": "EquippedWeaponSkinsMap" },
         "equippedAvatarSkinId": {
           "type": "string",
           "minLength": 1,
@@ -191,6 +206,7 @@
         "unlockedAvatarSkins",
         "equippedWeaponId",
         "equippedWeaponSkinId",
+        "equippedWeaponSkins",
         "equippedAvatarSkinId",
         "tutorialCompleted",
         "easterEggUnlocked",
