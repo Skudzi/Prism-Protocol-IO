@@ -1,9 +1,13 @@
 import {
+  ALL_MISSIONS,
   AVATAR_SKINS,
   BATTLE_PASS_TIERS,
   CHEST_CATALOG,
   createDefaultEquippedWeaponSkins,
+  createDefaultMissionsState,
   createDefaultWeaponStats,
+  getDailyDateKeyFromMs,
+  getWeeklyKeyFromMs,
   MAP_LIST,
   MAPS,
   PASS_SEASON_DURATION_MS,
@@ -24,7 +28,9 @@ import {
   MatchLeaderboardEntry,
   MatchSummary,
   MatchmakingRoomInfo,
+  MissionDef,
   PlayerCloudProfile,
+  PlayerMissionsState,
   SkinRarity,
   WeaponId,
   WeaponSkinDef,
@@ -1187,7 +1193,8 @@ export function computeAdaptivePerfStep(params: {
 
 export function mergeLocalAndCloudProfiles(
   local: PlayerCloudProfile,
-  cloud: PlayerCloudProfile
+  cloud: PlayerCloudProfile,
+  nowMs = Date.now()
 ): PlayerCloudProfile {
   if (local.accountId !== cloud.accountId) {
     return {
@@ -1308,6 +1315,7 @@ export function mergeLocalAndCloudProfiles(
     equippedWeaponSkinId: mergedWeaponSkins[primary.equippedWeaponId] ?? primary.equippedWeaponSkinId,
     tutorialCompleted: local.tutorialCompleted || cloud.tutorialCompleted,
     easterEggUnlocked: local.easterEggUnlocked || cloud.easterEggUnlocked,
+    missions: mergeMissionsStates(local.missions, cloud.missions, nowMs),
     stats: {
       matchesPlayed: Math.max(local.stats.matchesPlayed, cloud.stats.matchesPlayed),
       wins: Math.max(local.stats.wins, cloud.stats.wins),
@@ -1323,11 +1331,204 @@ export function mergeLocalAndCloudProfiles(
   };
 }
 
+export function normalizeMissionsState(
+  raw?: Partial<PlayerMissionsState> | null,
+  nowMs = Date.now()
+): PlayerMissionsState {
+  const currentDailyKey = getDailyDateKeyFromMs(nowMs);
+  const currentWeeklyKey = getWeeklyKeyFromMs(nowMs);
+  const base = createDefaultMissionsState(nowMs);
+  if (!raw || typeof raw !== 'object') return base;
+
+  const sameDay = raw.dailyDateKey === currentDailyKey;
+  const sameWeek = raw.weeklyKey === currentWeeklyKey;
+  const clampCount = (n: unknown, max = 100000) =>
+    Math.min(max, Math.max(0, Math.round(Number(n) || 0)));
+
+  const dailyClaimedIds = sameDay && Array.isArray(raw.dailyClaimedIds)
+    ? Array.from(
+        new Set(
+          raw.dailyClaimedIds.filter(
+            (id): id is string => typeof id === 'string' && id.length >= 1 && id.length <= 64
+          )
+        )
+      ).slice(0, 20)
+    : [];
+
+  const weeklyClaimedIds = sameWeek && Array.isArray(raw.weeklyClaimedIds)
+    ? Array.from(
+        new Set(
+          raw.weeklyClaimedIds.filter(
+            (id): id is string => typeof id === 'string' && id.length >= 1 && id.length <= 64
+          )
+        )
+      ).slice(0, 20)
+    : [];
+
+  const rawWeeklyKills = raw.weeklyWeaponKills;
+  const weeklyWeaponKills: Record<WeaponId, number> = {
+    pulse_carbine: sameWeek ? clampCount(rawWeeklyKills?.pulse_carbine) : 0,
+    volt_scatter: sameWeek ? clampCount(rawWeeklyKills?.volt_scatter) : 0,
+    helios_rail: sameWeek ? clampCount(rawWeeklyKills?.helios_rail) : 0,
+    arc_repeater: sameWeek ? clampCount(rawWeeklyKills?.arc_repeater) : 0,
+  };
+
+  return {
+    dailyDateKey: currentDailyKey,
+    weeklyKey: currentWeeklyKey,
+    dailyGamesPlayed: sameDay ? clampCount(raw.dailyGamesPlayed, 10000) : 0,
+    dailyBestMatchTags: sameDay ? clampCount(raw.dailyBestMatchTags, 10000) : 0,
+    dailyTotalTags: sameDay ? clampCount(raw.dailyTotalTags, 100000) : 0,
+    dailyClaimedIds,
+    weeklyWeaponKills,
+    weeklyClaimedIds,
+  };
+}
+
+function mergeMissionsStates(
+  localRaw?: Partial<PlayerMissionsState> | null,
+  cloudRaw?: Partial<PlayerMissionsState> | null,
+  nowMs = Date.now()
+): PlayerMissionsState {
+  const local = normalizeMissionsState(localRaw, nowMs);
+  const cloud = normalizeMissionsState(cloudRaw, nowMs);
+  return {
+    dailyDateKey: local.dailyDateKey,
+    weeklyKey: local.weeklyKey,
+    dailyGamesPlayed: Math.max(local.dailyGamesPlayed, cloud.dailyGamesPlayed),
+    dailyBestMatchTags: Math.max(local.dailyBestMatchTags, cloud.dailyBestMatchTags),
+    dailyTotalTags: Math.max(local.dailyTotalTags, cloud.dailyTotalTags),
+    dailyClaimedIds: Array.from(
+      new Set([...cloud.dailyClaimedIds, ...local.dailyClaimedIds])
+    ).slice(0, 20),
+    weeklyWeaponKills: {
+      pulse_carbine: Math.max(
+        local.weeklyWeaponKills.pulse_carbine,
+        cloud.weeklyWeaponKills.pulse_carbine
+      ),
+      volt_scatter: Math.max(
+        local.weeklyWeaponKills.volt_scatter,
+        cloud.weeklyWeaponKills.volt_scatter
+      ),
+      helios_rail: Math.max(
+        local.weeklyWeaponKills.helios_rail,
+        cloud.weeklyWeaponKills.helios_rail
+      ),
+      arc_repeater: Math.max(
+        local.weeklyWeaponKills.arc_repeater,
+        cloud.weeklyWeaponKills.arc_repeater
+      ),
+    },
+    weeklyClaimedIds: Array.from(
+      new Set([...cloud.weeklyClaimedIds, ...local.weeklyClaimedIds])
+    ).slice(0, 20),
+  };
+}
+
+export function getMissionResetCountdowns(nowMs = Date.now()): {
+  dailyHours: number;
+  dailyMinutes: number;
+  weeklyDays: number;
+  weeklyHours: number;
+} {
+  const d = new Date(nowMs);
+  const nextMidnightUtc = Date.UTC(
+    d.getUTCFullYear(),
+    d.getUTCMonth(),
+    d.getUTCDate() + 1,
+    0,
+    0,
+    0
+  );
+  const dailyRemMs = Math.max(0, nextMidnightUtc - nowMs);
+  const dailyTotalMin = Math.floor(dailyRemMs / 60000);
+  const dailyHours = Math.floor(dailyTotalMin / 60);
+  const dailyMinutes = dailyTotalMin % 60;
+
+  const dayOfWeek = d.getUTCDay(); // 0=Sun..6=Sat
+  const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+  const nextMondayUtc = Date.UTC(
+    d.getUTCFullYear(),
+    d.getUTCMonth(),
+    d.getUTCDate() + daysUntilMonday,
+    0,
+    0,
+    0
+  );
+  const weeklyRemMs = Math.max(0, nextMondayUtc - nowMs);
+  const weeklyTotalHours = Math.floor(weeklyRemMs / 3600000);
+  const weeklyDays = Math.floor(weeklyTotalHours / 24);
+  const weeklyHours = weeklyTotalHours % 24;
+
+  return { dailyHours, dailyMinutes, weeklyDays, weeklyHours };
+}
+
+export function getMissionProgressValue(
+  mission: MissionDef,
+  state: PlayerMissionsState
+): number {
+  switch (mission.kind) {
+    case 'daily_tags_in_match':
+      return state.dailyBestMatchTags;
+    case 'daily_play_games':
+      return state.dailyGamesPlayed;
+    case 'daily_total_tags':
+      return state.dailyTotalTags;
+    case 'weekly_weapon_kills':
+      return mission.weaponId ? state.weeklyWeaponKills[mission.weaponId] ?? 0 : 0;
+  }
+}
+
+export function isMissionClaimed(
+  mission: MissionDef,
+  state: PlayerMissionsState
+): boolean {
+  return mission.period === 'daily'
+    ? state.dailyClaimedIds.includes(mission.id)
+    : state.weeklyClaimedIds.includes(mission.id);
+}
+
+export function claimMissionReward(
+  profile: PlayerCloudProfile,
+  missionId: string,
+  nowMs = Date.now()
+): { ok: boolean; profile: PlayerCloudProfile; rewardCredits?: number; reason?: string } {
+  const mission = ALL_MISSIONS.find((m) => m.id === missionId);
+  if (!mission) {
+    return { ok: false, profile, reason: 'Mission not found' };
+  }
+  const state = normalizeMissionsState(profile.missions, nowMs);
+  if (isMissionClaimed(mission, state)) {
+    return { ok: false, profile, reason: 'Mission reward already claimed' };
+  }
+  const progress = getMissionProgressValue(mission, state);
+  if (progress < mission.target) {
+    return { ok: false, profile, reason: 'Mission objective not yet completed' };
+  }
+
+  const nextState: PlayerMissionsState =
+    mission.period === 'daily'
+      ? { ...state, dailyClaimedIds: [...state.dailyClaimedIds, mission.id] }
+      : { ...state, weeklyClaimedIds: [...state.weeklyClaimedIds, mission.id] };
+
+  return {
+    ok: true,
+    rewardCredits: mission.rewardCredits,
+    profile: {
+      ...profile,
+      credits: profile.credits + mission.rewardCredits,
+      missions: nextState,
+      lastSyncedAt: new Date(nowMs).toISOString(),
+    },
+  };
+}
+
 export function applyMatchRewards(
   profile: PlayerCloudProfile,
   summary: MatchSummary,
   shotsFired = 0,
-  shotsHit = 0
+  shotsHit = 0,
+  nowMs = Date.now()
 ): PlayerCloudProfile {
   const synced = syncBattlePassSeason(profile).profile;
   const nextSkins = [...synced.unlockedWeaponSkins];
@@ -1341,6 +1542,9 @@ export function applyMatchRewards(
   }
 
   const currentWeapons = normalizeWeaponStats(synced.stats?.weaponStats);
+  const currentMissions = normalizeMissionsState(synced.missions, nowMs);
+  const nextWeeklyWeaponKills = { ...currentMissions.weeklyWeaponKills };
+
   if (summary.weaponStats) {
     for (const id of WEAPON_IDS) {
       const add = summary.weaponStats[id];
@@ -1353,8 +1557,22 @@ export function applyMatchRewards(
         shotsFired: currentWeapons[id].shotsFired + addFired,
         shotsHit: currentWeapons[id].shotsHit + addHit,
       };
+      nextWeeklyWeaponKills[id] = (nextWeeklyWeaponKills[id] ?? 0) + addKills;
     }
+  } else if (summary.tags > 0) {
+    const activeWep = synced.equippedWeaponId ?? 'pulse_carbine';
+    nextWeeklyWeaponKills[activeWep] =
+      (nextWeeklyWeaponKills[activeWep] ?? 0) + Math.max(0, Math.round(summary.tags));
   }
+
+  const matchTags = Math.max(0, Math.round(summary.tags));
+  const nextMissions: PlayerMissionsState = {
+    ...currentMissions,
+    dailyGamesPlayed: currentMissions.dailyGamesPlayed + 1,
+    dailyBestMatchTags: Math.max(currentMissions.dailyBestMatchTags, matchTags),
+    dailyTotalTags: currentMissions.dailyTotalTags + matchTags,
+    weeklyWeaponKills: nextWeeklyWeaponKills,
+  };
 
   return {
     ...synced,
@@ -1364,6 +1582,7 @@ export function applyMatchRewards(
       synced.battlePassXp + Math.min(MAX_MATCH_XP, Math.max(0, summary.xpEarned)),
     unlockedWeaponSkins: nextSkins,
     easterEggUnlocked,
+    missions: nextMissions,
     stats: {
       matchesPlayed: synced.stats.matchesPlayed + 1,
       wins: synced.stats.wins + (summary.won ? 1 : 0),
@@ -1373,7 +1592,7 @@ export function applyMatchRewards(
       shotsHit: synced.stats.shotsHit + shotsHit,
       weaponStats: currentWeapons,
     },
-    lastSyncedAt: new Date().toISOString(),
+    lastSyncedAt: new Date(nowMs).toISOString(),
   };
 }
 
@@ -1651,6 +1870,12 @@ export function hasProfileCloudDiff(
     if (aSkins[id] !== bSkins[id]) {
       return true;
     }
+  }
+
+  const aMissions = normalizeMissionsState(a.missions);
+  const bMissions = normalizeMissionsState(b.missions);
+  if (JSON.stringify(aMissions) !== JSON.stringify(bMissions)) {
+    return true;
   }
 
   return (

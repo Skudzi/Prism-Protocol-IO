@@ -3,7 +3,7 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 import { DEFAULT_KEYBINDS, DEFAULT_SETTINGS, PASS_SEASON_DURATION_MS } from './game/catalog';
-import { normalizeEquippedWeaponSkins, normalizeWeaponStats } from './game/rules';
+import { normalizeEquippedWeaponSkins, normalizeMissionsState, normalizeWeaponStats } from './game/rules';
 import { PlatformType, PlayerCloudProfile } from './game/types';
 
 const app = initializeApp(firebaseConfig);
@@ -129,6 +129,8 @@ export function buildFirestoreProfilePayload(
       ? profile.passSeasonEndsAt.slice(0, 64)
       : new Date(Date.now() + PASS_SEASON_DURATION_MS).toISOString();
 
+  const normalizedMissions = normalizeMissionsState(profile.missions);
+
   return {
     accountId: uid,
     nickname: sanitizeFirestoreNickname(profile.nickname),
@@ -157,6 +159,21 @@ export function buildFirestoreProfilePayload(
     equippedAvatarSkinId: (profile.equippedAvatarSkinId || 'vanguard_cyan').slice(0, 64),
     tutorialCompleted: Boolean(profile.tutorialCompleted),
     easterEggUnlocked: Boolean(profile.easterEggUnlocked),
+    missions: {
+      dailyDateKey: normalizedMissions.dailyDateKey.slice(0, 16),
+      weeklyKey: normalizedMissions.weeklyKey.slice(0, 16),
+      dailyGamesPlayed: clampInt(normalizedMissions.dailyGamesPlayed, 10000),
+      dailyBestMatchTags: clampInt(normalizedMissions.dailyBestMatchTags, 10000),
+      dailyTotalTags: clampInt(normalizedMissions.dailyTotalTags, 100000),
+      dailyClaimedIds: normalizedMissions.dailyClaimedIds.slice(0, 20),
+      weeklyWeaponKills: {
+        pulse_carbine: clampInt(normalizedMissions.weeklyWeaponKills.pulse_carbine, 100000),
+        volt_scatter: clampInt(normalizedMissions.weeklyWeaponKills.volt_scatter, 100000),
+        helios_rail: clampInt(normalizedMissions.weeklyWeaponKills.helios_rail, 100000),
+        arc_repeater: clampInt(normalizedMissions.weeklyWeaponKills.arc_repeater, 100000),
+      },
+      weeklyClaimedIds: normalizedMissions.weeklyClaimedIds.slice(0, 20),
+    },
     stats: {
       matchesPlayed: clampInt(profile.stats?.matchesPlayed, 10000000),
       wins: clampInt(profile.stats?.wins, 10000000),

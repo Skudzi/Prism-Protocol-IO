@@ -125,6 +125,48 @@ service cloud.firestore {
         isValidSkinId(ws.arc_repeater);
     }
 
+    function isValidMissionKey(k) {
+      return k is string &&
+        k.size() >= 1 &&
+        k.size() <= 16;
+    }
+
+    function isValidMissionIdList(arr, maxLen) {
+      return arr is list &&
+        arr.size() <= maxLen &&
+        (arr.size() == 0 || isValidSkinId(arr[0]));
+    }
+
+    function isValidWeeklyWeaponKillsMap(wk) {
+      return wk is map &&
+        wk.keys().hasAll(['pulse_carbine', 'volt_scatter', 'helios_rail', 'arc_repeater']) &&
+        wk.keys().hasOnly(['pulse_carbine', 'volt_scatter', 'helios_rail', 'arc_repeater']) &&
+        isNonNegInt(wk.pulse_carbine, 100000) &&
+        isNonNegInt(wk.volt_scatter, 100000) &&
+        isNonNegInt(wk.helios_rail, 100000) &&
+        isNonNegInt(wk.arc_repeater, 100000);
+    }
+
+    function isValidMissionsState(m) {
+      return m is map &&
+        m.keys().hasAll([
+          'dailyDateKey', 'weeklyKey', 'dailyGamesPlayed', 'dailyBestMatchTags',
+          'dailyTotalTags', 'dailyClaimedIds', 'weeklyWeaponKills', 'weeklyClaimedIds'
+        ]) &&
+        m.keys().hasOnly([
+          'dailyDateKey', 'weeklyKey', 'dailyGamesPlayed', 'dailyBestMatchTags',
+          'dailyTotalTags', 'dailyClaimedIds', 'weeklyWeaponKills', 'weeklyClaimedIds'
+        ]) &&
+        isValidMissionKey(m.dailyDateKey) &&
+        isValidMissionKey(m.weeklyKey) &&
+        isNonNegInt(m.dailyGamesPlayed, 10000) &&
+        isNonNegInt(m.dailyBestMatchTags, 10000) &&
+        isNonNegInt(m.dailyTotalTags, 100000) &&
+        isValidMissionIdList(m.dailyClaimedIds, 20) &&
+        isValidWeeklyWeaponKillsMap(m.weeklyWeaponKills) &&
+        isValidMissionIdList(m.weeklyClaimedIds, 20);
+    }
+
     function isValidSettings(s) {
       return s is map &&
         s.keys().hasAll([
@@ -197,7 +239,7 @@ service cloud.firestore {
           'claimedFreeTiers', 'claimedPremiumTiers',
           'unlockedWeaponSkins', 'unlockedAvatarSkins', 'equippedWeaponId',
           'equippedWeaponSkinId', 'equippedWeaponSkins', 'equippedAvatarSkinId', 'tutorialCompleted',
-          'easterEggUnlocked', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
+          'easterEggUnlocked', 'missions', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
           'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
@@ -206,7 +248,7 @@ service cloud.firestore {
           'claimedFreeTiers', 'claimedPremiumTiers',
           'unlockedWeaponSkins', 'unlockedAvatarSkins', 'equippedWeaponId',
           'equippedWeaponSkinId', 'equippedWeaponSkins', 'equippedAvatarSkinId', 'tutorialCompleted',
-          'easterEggUnlocked', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
+          'easterEggUnlocked', 'missions', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
           'createdAt', 'updatedAt'
         ]) &&
         data.accountId is string &&
@@ -231,6 +273,7 @@ service cloud.firestore {
         isValidSkinId(data.equippedAvatarSkinId) &&
         data.tutorialCompleted is bool &&
         data.easterEggUnlocked is bool &&
+        isValidMissionsState(data.missions) &&
         isValidStats(data.stats) &&
         isValidSettings(data.settings) &&
         isValidKeybinds(data.keybinds) &&
@@ -252,7 +295,7 @@ service cloud.firestore {
         'claimedFreeTiers', 'claimedPremiumTiers',
         'unlockedWeaponSkins', 'unlockedAvatarSkins', 'equippedWeaponId',
         'equippedWeaponSkinId', 'equippedWeaponSkins', 'equippedAvatarSkinId', 'tutorialCompleted',
-        'easterEggUnlocked', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
+        'easterEggUnlocked', 'missions', 'stats', 'settings', 'keybinds', 'lastSyncedAt',
         'updatedAt'
       ]);
     }

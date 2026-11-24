@@ -23,6 +23,43 @@
       },
       "required": ["pulse_carbine", "volt_scatter", "helios_rail", "arc_repeater"]
     },
+    "WeeklyWeaponKillsMap": {
+      "title": "WeeklyWeaponKillsMap",
+      "description": "Weekly kill/tag progress per weapon towards the 200-kill weekly missions.",
+      "type": "object",
+      "properties": {
+        "pulse_carbine": { "type": "number" },
+        "volt_scatter": { "type": "number" },
+        "helios_rail": { "type": "number" },
+        "arc_repeater": { "type": "number" }
+      },
+      "required": ["pulse_carbine", "volt_scatter", "helios_rail", "arc_repeater"]
+    },
+    "MissionsState": {
+      "title": "MissionsState",
+      "description": "Daily and weekly Battle Pass mission progress and claimed mission IDs.",
+      "type": "object",
+      "properties": {
+        "dailyDateKey": { "type": "string", "minLength": 1, "maxLength": 16 },
+        "weeklyKey": { "type": "string", "minLength": 1, "maxLength": 16 },
+        "dailyGamesPlayed": { "type": "number" },
+        "dailyBestMatchTags": { "type": "number" },
+        "dailyTotalTags": { "type": "number" },
+        "dailyClaimedIds": { "type": "array" },
+        "weeklyWeaponKills": { "$ref": "WeeklyWeaponKillsMap" },
+        "weeklyClaimedIds": { "type": "array" }
+      },
+      "required": [
+        "dailyDateKey",
+        "weeklyKey",
+        "dailyGamesPlayed",
+        "dailyBestMatchTags",
+        "dailyTotalTags",
+        "dailyClaimedIds",
+        "weeklyWeaponKills",
+        "weeklyClaimedIds"
+      ]
+    },
     "PlayerStats": {
       "title": "PlayerStats",
       "description": "Cumulative combat statistics for a Prism Protocol player.",
@@ -183,6 +220,7 @@
         },
         "tutorialCompleted": { "type": "boolean" },
         "easterEggUnlocked": { "type": "boolean" },
+        "missions": { "$ref": "MissionsState" },
         "stats": { "$ref": "PlayerStats" },
         "settings": { "$ref": "PlayerSettings" },
         "keybinds": { "$ref": "PlayerKeybinds" },
@@ -210,6 +248,7 @@
         "equippedAvatarSkinId",
         "tutorialCompleted",
         "easterEggUnlocked",
+        "missions",
         "stats",
         "settings",
         "keybinds",

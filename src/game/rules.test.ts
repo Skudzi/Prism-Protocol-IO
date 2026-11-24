@@ -4,6 +4,7 @@ import {
   AVATAR_SKINS,
   CHEST_CATALOG,
   createDefaultProfile,
+  DAILY_MISSIONS,
   DEFAULT_SETTINGS,
   MAP_LIST,
   MAPS,
@@ -12,6 +13,7 @@ import {
   RARITY_ORDER,
   WEAPONS,
   WEAPON_SKINS,
+  WEEKLY_MISSIONS,
 } from './catalog';
 import {
   allocateMatchmakingRoom,
@@ -30,6 +32,7 @@ import {
   checkHealOrbPickup,
   checkJumpPadCollision,
   claimBattlePassTier,
+  claimMissionReward,
   clearSpawnProtectionOnShot,
   computeAdaptivePerfStep,
   createSpawnProtection,
@@ -41,11 +44,14 @@ import {
   getChestWeaponPercentages,
   getHealOrbScheduleTimes,
   getKillRankReward,
+  getMissionProgressValue,
+  getMissionResetCountdowns,
   getOperatorWeaponBodyStyle,
   getPerfSettingsForTier,
   getSpawnProtectedDamageMultiplier,
   getSpawnProtectionRemainingMs,
   hasProfileCloudDiff,
+  isMissionClaimed,
   isSpawnProtectionActive,
   MAX_MATCH_CREDITS,
   MAX_MATCH_XP,
@@ -53,6 +59,7 @@ import {
   mergeLocalAndCloudProfiles,
   NORMAL_JUMP_VELOCITY,
   normalizeEquippedWeaponSkins,
+  normalizeMissionsState,
   pickOpenHealOrbPosition,
   pickRandomMapId,
   purchaseStoreItem,
@@ -1253,5 +1260,219 @@ test('Settings default aimMode to hold and profile diff/merge tracks aimMode and
   assert.equal(merged.equippedWeaponSkins.pulse_carbine, 'solar_flare');
   assert.equal(merged.equippedWeaponSkins.helios_rail, 'prism_relic');
   assert.equal(merged.settings.aimMode, 'toggle');
+});
+
+test('Neon Foundry replaces Cryo Spire with dense multi-floor reactor, jump pads, and 4/4 daylight balance', () => {
+  assert.equal('cryo_spire' in MAPS, false);
+  assert.equal(MAP_LIST.some((m) => (m.id as string) === 'cryo_spire'), false);
+  const neon = MAPS.neon_foundry;
+  assert.ok(neon);
+  assert.equal(neon.isDaylight, false);
+  assert.ok(neon.obstacles.length >= 60, `Expected >= 60 obstacles in Neon Foundry, got ${neon.obstacles.length}`);
+  assert.equal(neon.jumpPads.length, 6);
+  assert.ok(
+    neon.obstacles.some((o) => o.kind === 'building_floor' && o.y >= 3.5),
+    'Neon Foundry should include an elevated 2nd floor deck / sky bridge'
+  );
+  assert.ok(
+    neon.obstacles.some((o) => o.kind === 'box_pile'),
+    'Neon Foundry should include multi-box piles'
+  );
+  assert.ok(
+    neon.obstacles.some((o) => o.kind === 'street_light'),
+    'Neon Foundry should include solid street lights'
+  );
+
+  // Verify walking straight up East exterior stairs (x = +27 -> +13, z = 0) reaches Floor 2 (y = 4.0m) without jumping
+  let pos = { x: 27, y: 0, z: 0 };
+  let vel = { x: 0, y: 0, z: 0 };
+  let grounded = true;
+  for (let step = 0; step < 80; step++) {
+    const moved = resolvePlayerMovement(pos, vel, 1, 0, Math.PI / 2, false, grounded, 0.03, neon);
+    pos = moved.pos;
+    vel = moved.vel;
+    grounded = moved.grounded;
+  }
+  assert.ok(pos.x < 14, `Expected player to climb stairs onto F2 inside building, got x=${pos.x}`);
+  assert.ok(pos.y >= 3.95, `Expected player to reach F2 height (~4.0m), got y=${pos.y}`);
+});
+
+test('Daily Missions track single-match tags, games played, total tags, claim credits, and reset next UTC day', () => {
+  const day1Ms = Date.UTC(2026, 10, 22, 14, 0, 0);
+  const day2Ms = Date.UTC(2026, 10, 23, 1, 0, 0);
+
+  let profile = createDefaultProfile('MissionRunner');
+  profile = {
+    ...profile,
+    missions: normalizeMissionsState(profile.missions, day1Ms),
+  };
+
+  assert.equal(DAILY_MISSIONS.length, 3);
+  const preClaim = claimMissionReward(profile, 'daily_tags_in_match', day1Ms);
+  assert.equal(preClaim.ok, false);
+
+  // Match 1: 6 tags -> completes 'Get 5 tags in one match' and increments games played to 1
+  profile = applyMatchRewards(
+    profile,
+    {
+      gameMode: 'ffa',
+      mapId: 'neon_foundry',
+      won: true,
+      tags: 6,
+      deaths: 1,
+      accuracy: 45,
+      xpEarned: 20,
+      creditsEarned: 75,
+      easterEggFound: false,
+      durationSec: 120,
+    },
+    40,
+    18,
+    day1Ms
+  );
+
+  const state1 = normalizeMissionsState(profile.missions, day1Ms);
+  assert.equal(state1.dailyGamesPlayed, 1);
+  assert.equal(state1.dailyBestMatchTags, 6);
+  assert.equal(state1.dailyTotalTags, 6);
+
+  const claim5 = claimMissionReward(profile, 'daily_tags_in_match', day1Ms);
+  assert.equal(claim5.ok, true);
+  assert.equal(claim5.rewardCredits, 120);
+  assert.equal(claim5.profile.credits, profile.credits + 120);
+  assert.equal(isMissionClaimed(DAILY_MISSIONS[0], claim5.profile.missions!), true);
+
+  // Prevent double claim
+  const dup = claimMissionReward(claim5.profile, 'daily_tags_in_match', day1Ms);
+  assert.equal(dup.ok, false);
+
+  // Match 2: 6 tags -> completes 'Play 2 games' (+100 CR) & 'Score 12 tags today' (+150 CR)
+  profile = applyMatchRewards(
+    claim5.profile,
+    {
+      gameMode: 'tdm',
+      mapId: 'neon_foundry',
+      won: true,
+      tags: 6,
+      deaths: 2,
+      accuracy: 50,
+      xpEarned: 20,
+      creditsEarned: 75,
+      easterEggFound: false,
+      durationSec: 120,
+    },
+    30,
+    15,
+    day1Ms + 60_000
+  );
+
+  const claimGames = claimMissionReward(profile, 'daily_play_games', day1Ms + 60_000);
+  assert.equal(claimGames.ok, true);
+  assert.equal(claimGames.rewardCredits, 100);
+
+  const claimTotal = claimMissionReward(claimGames.profile, 'daily_total_tags', day1Ms + 60_000);
+  assert.equal(claimTotal.ok, true);
+  assert.equal(claimTotal.rewardCredits, 150);
+
+  // Next UTC day resets daily counters and claimed IDs cleanly
+  const rolled = normalizeMissionsState(claimTotal.profile.missions, day2Ms);
+  assert.equal(rolled.dailyGamesPlayed, 0);
+  assert.equal(rolled.dailyBestMatchTags, 0);
+  assert.equal(rolled.dailyTotalTags, 0);
+  assert.deepEqual(rolled.dailyClaimedIds, []);
+});
+
+test('Weekly Weapon Missions track 200 kills/tags per gun, reward bonus credits, and preserve/reset on weekly rollover', () => {
+  const week1Ms = Date.UTC(2026, 10, 18, 12, 0, 0); // Wed Nov 18 2026
+  const week2Ms = Date.UTC(2026, 10, 24, 12, 0, 0); // Tue Nov 24 2026 (next ISO week)
+
+  assert.equal(WEEKLY_MISSIONS.length, 4);
+  for (const m of WEEKLY_MISSIONS) {
+    assert.equal(m.target, 200);
+    assert.ok(m.weaponId);
+  }
+
+  let profile = createDefaultProfile('WeeklyAce');
+  profile = {
+    ...profile,
+    missions: normalizeMissionsState(profile.missions, week1Ms),
+  };
+
+  // Add 195 AR kills first (still incomplete)
+  profile = applyMatchRewards(
+    profile,
+    {
+      gameMode: 'ffa',
+      mapId: 'neon_foundry',
+      won: true,
+      tags: 195,
+      deaths: 0,
+      accuracy: 60,
+      xpEarned: 50,
+      creditsEarned: 250,
+      easterEggFound: false,
+      durationSec: 180,
+      weaponStats: {
+        pulse_carbine: { kills: 195, shotsFired: 400, shotsHit: 240 },
+        volt_scatter: { kills: 0, shotsFired: 0, shotsHit: 0 },
+        helios_rail: { kills: 0, shotsFired: 0, shotsHit: 0 },
+        arc_repeater: { kills: 0, shotsFired: 0, shotsHit: 0 },
+      },
+    },
+    400,
+    240,
+    week1Ms
+  );
+
+  const arMission = WEEKLY_MISSIONS.find((m) => m.weaponId === 'pulse_carbine')!;
+  assert.equal(getMissionProgressValue(arMission, profile.missions!), 195);
+  assert.equal(claimMissionReward(profile, arMission.id, week1Ms).ok, false);
+
+  // Add 8 more AR kills -> crosses 200 threshold!
+  profile = applyMatchRewards(
+    profile,
+    {
+      gameMode: 'tdm',
+      mapId: 'orbital_hangar',
+      won: true,
+      tags: 8,
+      deaths: 1,
+      accuracy: 50,
+      xpEarned: 30,
+      creditsEarned: 125,
+      easterEggFound: false,
+      durationSec: 120,
+      weaponStats: {
+        pulse_carbine: { kills: 8, shotsFired: 20, shotsHit: 10 },
+        volt_scatter: { kills: 0, shotsFired: 0, shotsHit: 0 },
+        helios_rail: { kills: 0, shotsFired: 0, shotsHit: 0 },
+        arc_repeater: { kills: 0, shotsFired: 0, shotsHit: 0 },
+      },
+    },
+    20,
+    10,
+    week1Ms + 1000
+  );
+
+  assert.equal(getMissionProgressValue(arMission, profile.missions!), 203);
+  const claimed = claimMissionReward(profile, arMission.id, week1Ms + 2000);
+  assert.equal(claimed.ok, true);
+  assert.equal(claimed.rewardCredits, arMission.rewardCredits);
+  assert.equal(claimed.profile.credits, profile.credits + arMission.rewardCredits);
+
+  // Cloud diff and merge track missions accurately
+  assert.equal(hasProfileCloudDiff(profile, claimed.profile), true);
+  const merged = mergeLocalAndCloudProfiles(profile, claimed.profile, week1Ms + 2000);
+  assert.ok(merged.missions?.weeklyClaimedIds.includes(arMission.id));
+
+  // Weekly reset countdown returns valid non-negative bounds
+  const timers = getMissionResetCountdowns(week1Ms);
+  assert.ok(timers.dailyHours >= 0 && timers.dailyHours < 24);
+  assert.ok(timers.weeklyDays >= 0 && timers.weeklyDays <= 7);
+
+  // Next ISO week resets weekly weapon kills & claimed weekly IDs
+  const nextWeekState = normalizeMissionsState(claimed.profile.missions, week2Ms);
+  assert.equal(nextWeekState.weeklyWeaponKills.pulse_carbine, 0);
+  assert.deepEqual(nextWeekState.weeklyClaimedIds, []);
 });
 

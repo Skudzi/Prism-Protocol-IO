@@ -1,9 +1,38 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Clock, Lock, Moon, Shuffle, Sun } from 'lucide-react';
-import { BATTLE_PASS_TIERS, MAP_LIST } from '../game/catalog';
-import { getBattlePassCountdown, getBattlePassTier } from '../game/rules';
-import { LanguageCode, MapId, PlayerCloudProfile } from '../game/types';
+import { Calendar, Check, Clock, Flame, Lock, Moon, Shuffle, Sun } from 'lucide-react';
+import {
+  BATTLE_PASS_TIERS,
+  DAILY_MISSIONS,
+  MAP_LIST,
+  WEAPONS,
+  WEEKLY_MISSIONS,
+} from '../game/catalog';
+import {
+  getBattlePassCountdown,
+  getBattlePassTier,
+  getMissionProgressValue,
+  getMissionResetCountdowns,
+  isMissionClaimed,
+  normalizeMissionsState,
+} from '../game/rules';
+import { LanguageCode, MapId, MissionDef, PlayerCloudProfile } from '../game/types';
 import { t } from '../i18n/translations';
+
+const GunBadgeIcon: React.FC<{ className?: string }> = ({ className = 'h-4 w-4' }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M2 8h18l2 3h-5v3l-2 1v-4h-4l-1.5 6H6l1.5-6H4L2 8z" />
+    <path d="M10 11h2" />
+  </svg>
+);
 
 interface MapsPanelProps {
   selectedMap: MapId;
@@ -41,6 +70,7 @@ export const MapsPanel: React.FC<MapsPanelProps> = ({
           return (
             <div
               key={m.id}
+              data-testid={`map-card-${m.id}`}
               className={`flex flex-col justify-between rounded-lg border p-4 transition-colors ${
                 previewing
                   ? 'border-cyan-500 bg-cyan-500/10'
@@ -76,6 +106,7 @@ export const MapsPanel: React.FC<MapsPanelProps> = ({
               <div className="mt-4 flex gap-2">
                 <button
                   type="button"
+                  data-testid={`preview-map-${m.id}`}
                   onClick={() => onPreviewMap(m.id)}
                   className={`flex-1 rounded px-3 py-1.5 text-xs font-semibold cursor-pointer ${
                     previewing
@@ -106,6 +137,7 @@ interface BattlePassPanelProps {
   lang: LanguageCode;
   onUpgradePremium: () => void;
   onClaimTier: (tier: number, track: 'free' | 'premium') => void;
+  onClaimMission: (missionId: string) => void;
   onSeasonReset: () => void;
 }
 
@@ -114,6 +146,7 @@ export const BattlePassPanel: React.FC<BattlePassPanelProps> = ({
   lang,
   onUpgradePremium,
   onClaimTier,
+  onClaimMission,
   onSeasonReset,
 }) => {
   const currentTier = getBattlePassTier(profile.battlePassXp);
@@ -126,6 +159,8 @@ export const BattlePassPanel: React.FC<BattlePassPanelProps> = ({
   }, [profile.passSeasonEndsAt, profile.passSeasonNumber]);
 
   const countdown = getBattlePassCountdown(profile.passSeasonEndsAt, nowMs);
+  const missionsState = normalizeMissionsState(profile.missions, nowMs);
+  const missionTimers = getMissionResetCountdowns(nowMs);
 
   useEffect(() => {
     if (countdown.expired) {
@@ -137,6 +172,112 @@ export const BattlePassPanel: React.FC<BattlePassPanelProps> = ({
     profile.passSeasonNumber || 1
   ).padStart(2, '0')}: ${t(lang, 'bp.seasonTheme')}`;
 
+  const renderMissionCard = (mission: MissionDef) => {
+    const progress = getMissionProgressValue(mission, missionsState);
+    const clamped = Math.min(progress, mission.target);
+    const pct = Math.min(100, Math.round((clamped / Math.max(1, mission.target)) * 100));
+    const claimed = isMissionClaimed(mission, missionsState);
+    const completed = progress >= mission.target;
+    const weapon = mission.weaponId
+      ? WEAPONS[mission.weaponId]
+      : undefined;
+    const isWeekly = mission.period === 'weekly';
+
+    return (
+      <div
+        key={mission.id}
+        data-testid={`mission-card-${mission.id}`}
+        className={`flex flex-col justify-between rounded-lg border p-3 transition-colors ${
+          completed && !claimed
+            ? isWeekly
+              ? 'border-amber-500/60 bg-amber-500/10'
+              : 'border-cyan-500/60 bg-cyan-500/10'
+            : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60'
+        }`}
+      >
+        <div>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              {weapon ? (
+                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-amber-500/20 text-amber-600 dark:text-amber-300">
+                  <GunBadgeIcon className="h-3.5 w-3.5" />
+                </span>
+              ) : null}
+              <div>
+                <div className="text-xs font-bold text-slate-900 dark:text-white">
+                  {mission.title}
+                </div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                  {mission.description}
+                </div>
+              </div>
+            </div>
+            <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+              +{mission.rewardCredits} CR
+            </span>
+          </div>
+
+          <div className="mt-2.5">
+            <div className="mb-1 flex items-center justify-between text-[11px]">
+              <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">
+                {clamped} / {mission.target}
+              </span>
+              {completed && !claimed ? (
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                  {t(lang, 'bp.missionReady')}
+                </span>
+              ) : (
+                <span className="font-mono text-slate-500 dark:text-slate-400">{pct}%</span>
+              )}
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  claimed
+                    ? 'bg-emerald-500'
+                    : isWeekly
+                    ? 'bg-amber-500'
+                    : 'bg-cyan-500'
+                }`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          data-testid={`claim-mission-${mission.id}`}
+          disabled={!completed || claimed}
+          onClick={() => onClaimMission(mission.id)}
+          className={`mt-2.5 flex w-full items-center justify-center gap-1 rounded px-2.5 py-1.5 text-[11px] font-bold transition-colors cursor-pointer disabled:cursor-not-allowed ${
+            claimed
+              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 opacity-75'
+              : completed
+              ? isWeekly
+                ? 'bg-amber-500 text-slate-950 hover:bg-amber-400'
+                : 'bg-cyan-500 text-slate-950 hover:bg-cyan-400'
+              : 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 opacity-70'
+          }`}
+        >
+          {claimed ? (
+            <>
+              <Check className="h-3 w-3" /> {t(lang, 'cta.claimed')}
+            </>
+          ) : completed ? (
+            <>
+              {t(lang, 'cta.claim')} +{mission.rewardCredits} CR
+            </>
+          ) : (
+            <>
+              <Lock className="h-3 w-3" /> {clamped}/{mission.target}
+            </>
+          )}
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 p-4">
@@ -144,7 +285,7 @@ export const BattlePassPanel: React.FC<BattlePassPanelProps> = ({
           <h3 className="text-lg font-bold text-slate-900 dark:text-white">
             {seasonLabel}
           </h3>
-          <p className="text-xs text-slate-600 dark:text-slate-400">
+          <p className="text-xs text-slate-600 dark:text-slate-400" data-testid="bp-summary-line">
             {t(lang, 'bp.tier')} {currentTier} / 10 · {profile.battlePassXp} XP · {profile.credits} CR
           </p>
           <div
@@ -176,6 +317,53 @@ export const BattlePassPanel: React.FC<BattlePassPanelProps> = ({
           <span className="text-xs font-bold text-amber-500">Premium Pass Active</span>
         )}
       </div>
+
+      {/* Daily Missions Section */}
+      <section
+        data-testid="daily-missions-section"
+        className="rounded-lg border border-cyan-500/25 bg-slate-50 dark:bg-slate-900/70 p-3.5"
+      >
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-cyan-500" />
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+              {t(lang, 'bp.dailyMissions')}
+            </h4>
+          </div>
+          <span className="inline-flex items-center gap-1 rounded bg-cyan-500/10 px-2 py-0.5 font-mono text-[11px] font-medium text-cyan-700 dark:text-cyan-300">
+            <Clock className="h-3 w-3" />
+            {t(lang, 'bp.dailyReset')}: {missionTimers.dailyHours}h {missionTimers.dailyMinutes}m
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
+          {DAILY_MISSIONS.map(renderMissionCard)}
+        </div>
+      </section>
+
+      {/* Weekly Weapon Missions Section */}
+      <section
+        data-testid="weekly-missions-section"
+        className="rounded-lg border border-amber-500/25 bg-slate-50 dark:bg-slate-900/70 p-3.5"
+      >
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Flame className="h-4 w-4 text-amber-500" />
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+              {t(lang, 'bp.weeklyMissions')}
+            </h4>
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-300">
+              <GunBadgeIcon className="h-3.5 w-3.5" /> 200 Kills / Tags per Weapon
+            </span>
+          </div>
+          <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-2 py-0.5 font-mono text-[11px] font-medium text-amber-700 dark:text-amber-300">
+            <Clock className="h-3 w-3" />
+            {t(lang, 'bp.weeklyReset')}: {missionTimers.weeklyDays}d {missionTimers.weeklyHours}h
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          {WEEKLY_MISSIONS.map(renderMissionCard)}
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
         {BATTLE_PASS_TIERS.map((tier) => {

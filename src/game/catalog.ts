@@ -8,7 +8,9 @@ import {
   MapDef,
   MapId,
   MapObstacle,
+  MissionDef,
   PlayerCloudProfile,
+  PlayerMissionsState,
   RarityMetaDef,
   SkinRarity,
   WeaponDef,
@@ -1124,6 +1126,185 @@ function buildPerimeterStreetLights(arenaHalfSize: number): MapObstacle[] {
     }));
 }
 
+function buildNeonFoundryObstacles(): MapObstacle[] {
+  const obs: MapObstacle[] = [];
+  const f2Y = 4.0;
+
+  // ============================================================================
+  // 1. CENTRAL 2-STORY REACTOR BUILDING (X: [-16, +16], Z: [-16, +16])
+  //    4 Ground Entrances (N/S/E/W), F2 Walkable Deck (y = 4.0), Overhead Roof
+  // ============================================================================
+  // North & South Walls (Z = ±15.3) with 6.6m wide center archway
+  for (const zSign of [-1, 1]) {
+    obs.push(
+      { x: -9.65, y: 0, z: zSign * 15.3, w: 12.7, h: 7.7, d: 1.4, kind: 'building_wall' },
+      { x: 9.65, y: 0, z: zSign * 15.3, w: 12.7, h: 7.7, d: 1.4, kind: 'building_wall' },
+      { x: 0, y: 3.05, z: zSign * 15.3, w: 6.6, h: 0.65, d: 1.4, kind: 'building_wall' }
+    );
+  }
+  // West & East Walls (X = ±15.3, strictly Z: [-14.6, +14.6]) with 6.6m center archway & flush F2 sill at y=4.00
+  for (const xSign of [-1, 1]) {
+    obs.push(
+      { x: xSign * 15.3, y: 0, z: -8.95, w: 1.4, h: 7.7, d: 11.3, kind: 'building_wall' },
+      { x: xSign * 15.3, y: 0, z: 8.95, w: 1.4, h: 7.7, d: 11.3, kind: 'building_wall' },
+      { x: xSign * 15.3, y: 3.05, z: 0, w: 1.4, h: 0.95, d: 6.6, kind: 'building_wall' }
+    );
+  }
+  // Floor 2 Slab (walkable at y = 4.00) & Overhead Reactor Roof (y = 7.70)
+  obs.push(
+    { x: 0, y: 3.7, z: 0, w: 29.2, h: 0.3, d: 29.2, kind: 'building_floor' },
+    { x: 0, y: 7.7, z: 0, w: 32.0, h: 0.35, d: 32.0, kind: 'building_roof' }
+  );
+
+  // Floor 1 Interior Cover (pillars, center reactor monolith, entrance baffles, crates)
+  obs.push(
+    { x: 0, y: 0, z: 0, w: 4.0, h: 2.8, d: 4.0, kind: 'monolith' },
+    { x: -7.5, y: 0, z: -7.5, w: 2.0, h: 3.7, d: 2.0, kind: 'pillar' },
+    { x: 7.5, y: 0, z: -7.5, w: 2.0, h: 3.7, d: 2.0, kind: 'pillar' },
+    { x: -7.5, y: 0, z: 7.5, w: 2.0, h: 3.7, d: 2.0, kind: 'pillar' },
+    { x: 7.5, y: 0, z: 7.5, w: 2.0, h: 3.7, d: 2.0, kind: 'pillar' },
+    { x: 0, y: 0, z: -10.8, w: 4.6, h: 1.4, d: 1.1, kind: 'concrete_wall' },
+    { x: 0, y: 0, z: 10.8, w: 4.6, h: 1.4, d: 1.1, kind: 'concrete_wall' },
+    { x: -10.8, y: 0, z: 0, w: 1.1, h: 1.4, d: 4.6, kind: 'concrete_wall' },
+    { x: 10.8, y: 0, z: 0, w: 1.1, h: 1.4, d: 4.6, kind: 'concrete_wall' },
+    { x: -5.0, y: 0, z: -11.5, w: 1.6, h: 1.2, d: 1.6, kind: 'wood_crate' },
+    { x: 5.0, y: 0, z: 11.5, w: 1.6, h: 1.2, d: 1.6, kind: 'wood_crate' },
+    { x: 11.5, y: 0, z: -5.0, w: 1.6, h: 1.2, d: 1.6, kind: 'wood_crate' },
+    { x: -11.5, y: 0, z: 5.0, w: 1.6, h: 1.2, d: 1.6, kind: 'wood_crate' }
+  );
+
+  // Floor 2 Upper Deck Cover (y = 4.00)
+  obs.push(
+    { x: 0, y: f2Y, z: 0, w: 4.2, h: 1.9, d: 4.2, kind: 'monolith' },
+    { x: -7.5, y: f2Y, z: -7.5, w: 3.8, h: 1.35, d: 1.2, kind: 'concrete_wall' },
+    { x: 7.5, y: f2Y, z: -7.5, w: 3.8, h: 1.35, d: 1.2, kind: 'concrete_wall' },
+    { x: -7.5, y: f2Y, z: 7.5, w: 3.8, h: 1.35, d: 1.2, kind: 'concrete_wall' },
+    { x: 7.5, y: f2Y, z: 7.5, w: 3.8, h: 1.35, d: 1.2, kind: 'concrete_wall' },
+    { x: -10.5, y: f2Y, z: 0, w: 2.0, h: 1.2, d: 2.4, kind: 'wood_crate' },
+    { x: 10.5, y: f2Y, z: 0, w: 2.0, h: 1.2, d: 2.4, kind: 'wood_crate' },
+    { x: 0, y: f2Y, z: -10.5, w: 2.4, h: 1.2, d: 2.0, kind: 'wood_crate' },
+    { x: 0, y: f2Y, z: 10.5, w: 2.4, h: 1.2, d: 2.0, kind: 'wood_crate' }
+  );
+
+  // ============================================================================
+  // 2. WEST & EAST EXTERIOR STAIRCASES TO FLOOR 2 + N/S OVERHEAD SKY BRIDGES
+  // ============================================================================
+  for (let s = 0; s < 12; s++) {
+    const stepH = ((s + 1) / 12) * 4.0;
+    obs.push(
+      { x: -25.2 + s * 0.8, y: 0, z: 0, w: 0.8, h: stepH, d: 5.0, kind: 'concrete_wall' },
+      { x: 25.2 - s * 0.8, y: 0, z: 0, w: 0.8, h: stepH, d: 5.0, kind: 'concrete_wall' }
+    );
+  }
+
+  // North & South Sky Bridges connecting F2 (z = ±16) to Vantage Decks (z = ±34..±40)
+  for (const zSign of [-1, 1]) {
+    obs.push(
+      { x: 0, y: 3.65, z: zSign * 25.0, w: 5.4, h: 0.35, d: 18.0, kind: 'bridge' },
+      { x: 0, y: 0, z: zSign * 37.0, w: 8.4, h: 4.0, d: 6.0, kind: 'platform' }
+    );
+    // Flanking stairs stepping down East & West off the N/S Vantage Decks (12 smooth steps)
+    for (let s = 0; s < 12; s++) {
+      const stepH = ((12 - s) / 12) * 4.0;
+      obs.push(
+        { x: -4.6 - s * 0.8, y: 0, z: zSign * 37.0, w: 0.8, h: stepH, d: 4.2, kind: 'concrete_wall' },
+        { x: 4.6 + s * 0.8, y: 0, z: zSign * 37.0, w: 0.8, h: stepH, d: 4.2, kind: 'concrete_wall' }
+      );
+    }
+  }
+
+  // ============================================================================
+  // 3. WEST & EAST COVERED FOUNDRY WAREHOUSES (X = ±42, Z = 0)
+  // ============================================================================
+  for (const xSign of [-1, 1]) {
+    obs.push(
+      { x: xSign * 42.0, y: 4.2, z: 0, w: 12.0, h: 0.35, d: 16.0, kind: 'metal_awning' },
+      { x: xSign * 42.0, y: 0, z: -7.3, w: 12.0, h: 4.2, d: 1.4, kind: 'concrete_wall' },
+      { x: xSign * 42.0, y: 0, z: 7.3, w: 12.0, h: 4.2, d: 1.4, kind: 'concrete_wall' },
+      { x: xSign * 44.0, y: 0, z: -2.4, w: 2.4, h: 1.4, d: 2.2, kind: 'wood_crate' },
+      { x: xSign * 40.0, y: 0, z: 2.4, w: 2.4, h: 1.4, d: 2.2, kind: 'wood_crate' }
+    );
+  }
+
+  // ============================================================================
+  // 4. DENSE QUADRANT BUILDINGS, HUGE BOX PILES, PEEK WALLS & LANE COVER
+  // ============================================================================
+  const fieldCover: Array<[number, number, number, number, number, number, MapObstacle['kind']]> = [
+    // 4 Corner Tactical Houses
+    [-33, 0, -27, 7.6, 4.8, 7.6, 'house'],
+    [33, 0, 27, 7.6, 4.8, 7.6, 'house'],
+    [-33, 0, 27, 7.2, 4.4, 7.2, 'house'],
+    [33, 0, -27, 7.2, 4.4, 7.2, 'house'],
+    // 4 Giant Stacked Box Piles framing Mid approaches
+    [-25, 0, -14, 4.8, 3.8, 4.4, 'box_pile'],
+    [25, 0, 14, 4.8, 3.8, 4.4, 'box_pile'],
+    [-25, 0, 14, 4.8, 3.8, 4.4, 'box_pile'],
+    [25, 0, -14, 4.8, 3.8, 4.4, 'box_pile'],
+    // North & South Base Anti-Spawncamp Concrete Peek Bunkers (z = ±50)
+    [0, 0, -50, 12.0, 1.45, 1.4, 'concrete_wall'],
+    [-16, 0, -49, 6.2, 1.15, 1.4, 'peek_wall'],
+    [16, 0, -49, 6.2, 1.15, 1.4, 'peek_wall'],
+    [0, 0, 50, 12.0, 1.45, 1.4, 'concrete_wall'],
+    [-16, 0, 49, 6.2, 1.15, 1.4, 'peek_wall'],
+    [16, 0, 49, 6.2, 1.15, 1.4, 'peek_wall'],
+    // Mid-Lane & Courtyard Shipping Containers + Crates + Concrete Barriers
+    [-12, 0, -26, 3.6, 2.1, 3.0, 'crate'],
+    [12, 0, -26, 2.8, 1.6, 2.4, 'wood_crate'],
+    [-12, 0, 26, 2.8, 1.6, 2.4, 'wood_crate'],
+    [12, 0, 26, 3.6, 2.1, 3.0, 'crate'],
+    [-19, 0, -44, 3.2, 1.9, 2.6, 'crate'],
+    [19, 0, -44, 2.4, 1.35, 2.2, 'wood_crate'],
+    [-19, 0, 44, 2.4, 1.35, 2.2, 'wood_crate'],
+    [19, 0, 44, 3.2, 1.9, 2.6, 'crate'],
+    // West & East Side Flank Peek Walls & Cover Crates
+    [-32, 0, -15, 1.3, 1.5, 5.2, 'concrete_wall'],
+    [-32, 0, 15, 1.3, 1.5, 5.2, 'concrete_wall'],
+    [32, 0, -15, 1.3, 1.5, 5.2, 'concrete_wall'],
+    [32, 0, 15, 1.3, 1.5, 5.2, 'concrete_wall'],
+    [-47, 0, -22, 3.4, 2.1, 2.8, 'crate'],
+    [-47, 0, 22, 3.4, 2.1, 2.8, 'crate'],
+    [47, 0, -22, 3.4, 2.1, 2.8, 'crate'],
+    [47, 0, 22, 3.4, 2.1, 2.8, 'crate'],
+    // Outer Lane Cargo Cover (eliminating empty perimeter zones)
+    [-56, 0, -16, 2.6, 1.5, 2.6, 'wood_crate'],
+    [-56, 0, 16, 2.6, 1.5, 2.6, 'wood_crate'],
+    [56, 0, -16, 2.6, 1.5, 2.6, 'wood_crate'],
+    [56, 0, 16, 2.6, 1.5, 2.6, 'wood_crate'],
+    [-50, 0, -40, 5.4, 1.6, 1.4, 'concrete_wall'],
+    [50, 0, -40, 5.4, 1.6, 1.4, 'concrete_wall'],
+    [-50, 0, 40, 5.4, 1.6, 1.4, 'concrete_wall'],
+    [50, 0, 40, 5.4, 1.6, 1.4, 'concrete_wall'],
+    [-34, 0, -48, 2.8, 1.5, 2.4, 'wood_crate'],
+    [34, 0, -48, 2.8, 1.5, 2.4, 'wood_crate'],
+    [-34, 0, 48, 2.8, 1.5, 2.4, 'wood_crate'],
+    [34, 0, 48, 2.8, 1.5, 2.4, 'wood_crate'],
+    [-12, 0, -56, 2.4, 1.3, 2.2, 'wood_crate'],
+    [12, 0, -56, 2.4, 1.3, 2.2, 'wood_crate'],
+    [-12, 0, 56, 2.4, 1.3, 2.2, 'wood_crate'],
+    [12, 0, 56, 2.4, 1.3, 2.2, 'wood_crate'],
+  ];
+  for (const [x, y, z, w, h, d, kind] of fieldCover) {
+    obs.push({ x, y, z, w, h, d, kind });
+  }
+
+  // Solid Courtyard Street Lights (clear of obstacles & roads)
+  const lightCoords: Array<[number, number]> = [
+    [-20, -31],
+    [20, -31],
+    [-20, 31],
+    [20, 31],
+    [-45, -34],
+    [45, -34],
+    [-45, 34],
+    [45, 34],
+  ];
+  for (const [lx, lz] of lightCoords) {
+    obs.push({ x: lx, y: 0, z: lz, w: 0.9, h: 6.4, d: 0.9, kind: 'street_light' });
+  }
+
+  return obs;
+}
+
 export const MAPS: Record<MapId, MapDef> = {
   hyperion_atrium: {
     id: 'hyperion_atrium',
@@ -1470,60 +1651,58 @@ export const MAPS: Record<MapId, MapDef> = {
       { x: 50, y: 0, z: 52, yaw: Math.PI / 4 },
     ],
   },
-  cryo_spire: {
-    id: 'cryo_spire',
-    nameKey: 'map.cryo_spire.name',
-    subtitleKey: 'map.cryo_spire.sub',
-    arenaHalfSize: 70,
+  neon_foundry: {
+    id: 'neon_foundry',
+    nameKey: 'map.neon_foundry.name',
+    subtitleKey: 'map.neon_foundry.sub',
+    arenaHalfSize: 72,
     isOutdoor: true,
     isDaylight: false,
-    hasTrees: true,
+    hasRoads: true,
+    hasTrees: false,
     hasStreetLights: true,
-    skyTopColor: '#041426',
-    skyHorizonColor: '#0e4a6b',
-    skyColor: '#092438',
-    fogColor: '#092438',
-    fogDensity: 0.0046,
-    floorColor: '#132a3d',
-    wallColor: '#1f3f59',
+    skyTopColor: '#070f24',
+    skyHorizonColor: '#1e3a5f',
+    skyColor: '#0e1d36',
+    fogColor: '#10203a',
+    fogDensity: 0.0038,
+    floorColor: '#1e293b',
+    wallColor: '#334155',
     accentColor: '#38bdf8',
-    keyLightColor: '#e0f2fe',
-    hemiSkyColor: '#7dd3fc',
-    hemiGroundColor: '#0f172a',
-    obstacles: [
-      { x: 0, y: 0, z: 0, w: 6.0, h: 6.8, d: 6.0, kind: 'ice' },
-      { x: -18, y: 0, z: 0, w: 4.6, h: 3.4, d: 4.6, kind: 'ice' },
-      { x: 18, y: 0, z: 0, w: 4.6, h: 3.4, d: 4.6, kind: 'ice' },
-      { x: 0, y: 0, z: -19, w: 4.6, h: 3.4, d: 4.6, kind: 'ice' },
-      { x: 0, y: 0, z: 19, w: 4.6, h: 3.4, d: 4.6, kind: 'ice' },
-      { x: -30, y: 0, z: -30, w: 7.4, h: 4.6, d: 7.4, kind: 'house' },
-      { x: 30, y: 0, z: 30, w: 7.4, h: 4.6, d: 7.4, kind: 'house' },
-      { x: -30, y: 0, z: 30, w: 6.5, h: 4.2, d: 6.5, kind: 'house' },
-      { x: 30, y: 0, z: -30, w: 6.5, h: 4.2, d: 6.5, kind: 'house' },
-      { x: -20, y: 0, z: -20, w: 4.0, h: 1.6, d: 4.0, kind: 'crate' },
-      { x: 20, y: 0, z: 20, w: 4.0, h: 1.6, d: 4.0, kind: 'crate' },
-      { x: 0, y: 2.9, z: -30, w: 18, h: 0.6, d: 4.2, kind: 'bridge' },
-      { x: 0, y: 2.9, z: 30, w: 18, h: 0.6, d: 4.2, kind: 'bridge' },
-      { x: -42, y: 0, z: 10, w: 7.5, h: 1.2, d: 1.8, kind: 'peek_wall' },
-      { x: 42, y: 0, z: -10, w: 7.5, h: 1.2, d: 1.8, kind: 'peek_wall' },
-      { x: 0, y: 0, z: -46, w: 9.0, h: 1.2, d: 1.8, kind: 'peek_wall' },
-      { x: 0, y: 0, z: 46, w: 9.0, h: 1.2, d: 1.8, kind: 'peek_wall' },
-      ...buildPerimeterStreetLights(70),
-    ],
+    keyLightColor: '#e2e8f0',
+    hemiSkyColor: '#60a5fa',
+    hemiGroundColor: '#1e293b',
+    obstacles: buildNeonFoundryObstacles(),
     jumpPads: [
-      { x: -11, y: 0, z: -30, radius: 1.7, boostY: 14.0 },
-      { x: 11, y: 0, z: 30, radius: 1.7, boostY: 14.0 },
-      { x: -30, y: 0, z: 0, radius: 1.7, boostY: 14.0 },
-      { x: 30, y: 0, z: 0, radius: 1.7, boostY: 14.0 },
+      { x: -21, y: 0, z: -21, radius: 1.7, boostY: 14.4 },
+      { x: 21, y: 0, z: 21, radius: 1.7, boostY: 14.4 },
+      { x: -21, y: 0, z: 21, radius: 1.7, boostY: 14.4 },
+      { x: 21, y: 0, z: -21, radius: 1.7, boostY: 14.4 },
+      { x: -53, y: 0, z: 0, radius: 1.7, boostY: 14.0 },
+      { x: 53, y: 0, z: 0, radius: 1.7, boostY: 14.0 },
     ],
     spawns: [
-      { x: 0, y: 0, z: 56, yaw: 0 },
-      { x: 0, y: 0, z: -56, yaw: Math.PI },
-      { x: -56, y: 0, z: 0, yaw: -Math.PI / 2 },
-      { x: 56, y: 0, z: 0, yaw: Math.PI / 2 },
-      { x: -48, y: 0, z: -48, yaw: -Math.PI * 0.75 },
-      { x: 48, y: 0, z: 48, yaw: Math.PI / 4 },
+      { x: 0, y: 0, z: 62, yaw: 0 },
+      { x: 0, y: 0, z: -62, yaw: Math.PI },
+      { x: -62, y: 0, z: 0, yaw: -Math.PI / 2 },
+      { x: 62, y: 0, z: 0, yaw: Math.PI / 2 },
+      { x: -56, y: 0, z: -56, yaw: -Math.PI * 0.75 },
+      { x: 56, y: 0, z: 56, yaw: Math.PI / 4 },
     ],
+    teamSpawns: {
+      cyan: [
+        { x: -22, y: 0, z: 61, yaw: 0 },
+        { x: -6, y: 0, z: 62, yaw: 0 },
+        { x: 6, y: 0, z: 62, yaw: 0 },
+        { x: 22, y: 0, z: 61, yaw: 0 },
+      ],
+      amber: [
+        { x: -22, y: 0, z: -61, yaw: Math.PI },
+        { x: -6, y: 0, z: -62, yaw: Math.PI },
+        { x: 6, y: 0, z: -62, yaw: Math.PI },
+        { x: 22, y: 0, z: -61, yaw: Math.PI },
+      ],
+    },
   },
   veridian_park: {
     id: 'veridian_park',
@@ -1700,7 +1879,7 @@ export const MAP_LIST: MapDef[] = [
   MAPS.orbital_hangar,
   MAPS.obsidian_vault,
   MAPS.solace_courtyard,
-  MAPS.cryo_spire,
+  MAPS.neon_foundry,
   MAPS.veridian_park,
   MAPS.sandstone_bazaar,
   MAPS.skyline_terrace,
@@ -1831,6 +2010,113 @@ export function createDefaultWeaponStats() {
   };
 }
 
+export const DAILY_MISSIONS: MissionDef[] = [
+  {
+    id: 'daily_tags_in_match',
+    period: 'daily',
+    kind: 'daily_tags_in_match',
+    target: 5,
+    rewardCredits: 120,
+    title: 'Single-Match Surge',
+    description: 'Get 5 tags in one match',
+  },
+  {
+    id: 'daily_play_games',
+    period: 'daily',
+    kind: 'daily_play_games',
+    target: 2,
+    rewardCredits: 100,
+    title: 'Arena Regular',
+    description: 'Play 2 games',
+  },
+  {
+    id: 'daily_total_tags',
+    period: 'daily',
+    kind: 'daily_total_tags',
+    target: 12,
+    rewardCredits: 150,
+    title: 'Precision Routine',
+    description: 'Score 12 tags today across matches',
+  },
+];
+
+export const WEEKLY_MISSIONS: MissionDef[] = [
+  {
+    id: 'weekly_kills_pulse_carbine',
+    period: 'weekly',
+    kind: 'weekly_weapon_kills',
+    weaponId: 'pulse_carbine',
+    target: 200,
+    rewardCredits: 600,
+    title: 'AR Marksman (200 Tags)',
+    description: 'Get 200 kills/tags with Pulse Carbine (AR)',
+  },
+  {
+    id: 'weekly_kills_volt_scatter',
+    period: 'weekly',
+    kind: 'weekly_weapon_kills',
+    weaponId: 'volt_scatter',
+    target: 200,
+    rewardCredits: 650,
+    title: 'Shotgun Breacher (200 Tags)',
+    description: 'Get 200 kills/tags with Volt Scattergun (Shotgun)',
+  },
+  {
+    id: 'weekly_kills_helios_rail',
+    period: 'weekly',
+    kind: 'weekly_weapon_kills',
+    weaponId: 'helios_rail',
+    target: 200,
+    rewardCredits: 700,
+    title: 'Sniper Ace (200 Tags)',
+    description: 'Get 200 kills/tags with Helios Railgun (Sniper)',
+  },
+  {
+    id: 'weekly_kills_arc_repeater',
+    period: 'weekly',
+    kind: 'weekly_weapon_kills',
+    weaponId: 'arc_repeater',
+    target: 200,
+    rewardCredits: 600,
+    title: 'SMG Striker (200 Tags)',
+    description: 'Get 200 kills/tags with Arc Repeater (SMG)',
+  },
+];
+
+export const ALL_MISSIONS: MissionDef[] = [...DAILY_MISSIONS, ...WEEKLY_MISSIONS];
+
+export function getDailyDateKeyFromMs(nowMs = Date.now()): string {
+  return new Date(nowMs).toISOString().slice(0, 10);
+}
+
+export function getWeeklyKeyFromMs(nowMs = Date.now()): string {
+  const d = new Date(nowMs);
+  const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const dayNum = utc.getUTCDay() || 7;
+  utc.setUTCDate(utc.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((utc.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${utc.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+export function createDefaultMissionsState(nowMs = Date.now()): PlayerMissionsState {
+  return {
+    dailyDateKey: getDailyDateKeyFromMs(nowMs),
+    weeklyKey: getWeeklyKeyFromMs(nowMs),
+    dailyGamesPlayed: 0,
+    dailyBestMatchTags: 0,
+    dailyTotalTags: 0,
+    dailyClaimedIds: [],
+    weeklyWeaponKills: {
+      pulse_carbine: 0,
+      volt_scatter: 0,
+      helios_rail: 0,
+      arc_repeater: 0,
+    },
+    weeklyClaimedIds: [],
+  };
+}
+
 export function createDefaultProfile(nickname = 'Vanguard01'): PlayerCloudProfile {
   const nowMs = Date.now();
   return {
@@ -1853,6 +2139,7 @@ export function createDefaultProfile(nickname = 'Vanguard01'): PlayerCloudProfil
     equippedAvatarSkinId: 'vanguard_cyan',
     tutorialCompleted: false,
     easterEggUnlocked: false,
+    missions: createDefaultMissionsState(nowMs),
     stats: {
       matchesPlayed: 0,
       wins: 0,

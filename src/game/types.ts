@@ -7,7 +7,7 @@ export type MapId =
   | 'orbital_hangar'
   | 'obsidian_vault'
   | 'solace_courtyard'
-  | 'cryo_spire'
+  | 'neon_foundry'
   | 'veridian_park'
   | 'sandstone_bazaar'
   | 'skyline_terrace';
@@ -313,6 +313,36 @@ export interface WeaponStatsEntry {
   shotsHit: number;
 }
 
+export type MissionPeriod = 'daily' | 'weekly';
+
+export type MissionKind =
+  | 'daily_tags_in_match'
+  | 'daily_play_games'
+  | 'daily_total_tags'
+  | 'weekly_weapon_kills';
+
+export interface MissionDef {
+  id: string;
+  period: MissionPeriod;
+  kind: MissionKind;
+  weaponId?: WeaponId;
+  target: number;
+  rewardCredits: number;
+  title: string;
+  description: string;
+}
+
+export interface PlayerMissionsState {
+  dailyDateKey: string;
+  weeklyKey: string;
+  dailyGamesPlayed: number;
+  dailyBestMatchTags: number;
+  dailyTotalTags: number;
+  dailyClaimedIds: string[];
+  weeklyWeaponKills: Record<WeaponId, number>;
+  weeklyClaimedIds: string[];
+}
+
 export interface PlayerCloudProfile {
   accountId: string;
   nickname: string;
@@ -333,6 +363,7 @@ export interface PlayerCloudProfile {
   equippedAvatarSkinId: string;
   tutorialCompleted: boolean;
   easterEggUnlocked: boolean;
+  missions?: PlayerMissionsState;
   stats: {
     matchesPlayed: number;
     wins: number;

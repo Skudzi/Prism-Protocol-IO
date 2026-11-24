@@ -45,9 +45,11 @@ import {
   applyMatchRewards,
   applyTutorialCompletion,
   claimBattlePassTier,
+  claimMissionReward,
   hasProfileCloudDiff,
   mergeLocalAndCloudProfiles,
   normalizeEquippedWeaponSkins,
+  normalizeMissionsState,
   normalizeWeaponStats,
   pickRandomMapId,
   purchaseStoreItem,
@@ -148,6 +150,7 @@ function normalizeProfile(raw: PlayerCloudProfile): PlayerCloudProfile {
     ...raw,
     equippedWeaponSkins: normalizedSlots,
     equippedWeaponSkinId: normalizedSlots[raw.equippedWeaponId] ?? raw.equippedWeaponSkinId,
+    missions: normalizeMissionsState(raw.missions),
     stats: {
       ...raw.stats,
       weaponStats: normalizeWeaponStats(raw.stats?.weaponStats),
@@ -1259,6 +1262,14 @@ export default function App() {
     return res;
   };
 
+  const handleClaimMission = (missionId: string) => {
+    const res = claimMissionReward(profileRef.current, missionId);
+    if (!res.ok) return;
+    profileRef.current = res.profile;
+    setProfile(res.profile);
+    void syncCloudSave(res.profile);
+  };
+
   const handleLogout = async () => {
     try {
       if (auth.currentUser) {
@@ -1614,20 +1625,19 @@ export default function App() {
                       });
                     }}
                     onClaimTier={(tier, track) => {
-                      setProfile((prev) => {
-                        const res = claimBattlePassTier(prev, tier, track);
-                        if (!res.ok) return prev;
-                        syncCloudSave(res.profile);
-                        return res.profile;
-                      });
+                      const res = claimBattlePassTier(profileRef.current, tier, track);
+                      if (!res.ok) return;
+                      profileRef.current = res.profile;
+                      setProfile(res.profile);
+                      void syncCloudSave(res.profile);
                     }}
+                    onClaimMission={handleClaimMission}
                     onSeasonReset={() => {
-                      setProfile((prev) => {
-                        const synced = syncBattlePassSeason(prev);
-                        if (!synced.resetTriggered) return prev;
-                        void syncCloudSave(synced.profile);
-                        return synced.profile;
-                      });
+                      const synced = syncBattlePassSeason(profileRef.current);
+                      if (!synced.resetTriggered) return;
+                      profileRef.current = synced.profile;
+                      setProfile(synced.profile);
+                      void syncCloudSave(synced.profile);
                     }}
                   />
                 )}

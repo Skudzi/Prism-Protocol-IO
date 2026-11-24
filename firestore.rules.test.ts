@@ -49,3 +49,10 @@ test('firestore.rules validates per-weapon equippedWeaponSkins map and settings.
   assert.match(rulesText, /s\.aimMode is string && s\.aimMode in \['hold', 'toggle'\]/);
 });
 
+test('firestore.rules validates daily and weekly missions state with empty-list guarding', () => {
+  assert.match(rulesText, /isValidMissionsState\(data\.missions\)/);
+  assert.match(rulesText, /isValidWeeklyWeaponKillsMap\(m\.weeklyWeaponKills\)/);
+  assert.match(rulesText, /arr\.size\(\) == 0 \|\| isValidSkinId\(arr\[0\]\)/);
+  assert.match(rulesText, /isProfileProgressionSyncAction[\s\S]*'missions'/);
+});
+

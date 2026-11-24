@@ -17,6 +17,7 @@ import {
   allocateMatchmakingRoom,
   MAX_PLAYERS_PER_ROOM,
   normalizeEquippedWeaponSkins,
+  normalizeMissionsState,
   normalizeWeaponStats,
   syncBattlePassSeason,
 } from './src/game/rules';
@@ -125,6 +126,11 @@ function loadStore(): CloudStoreData {
           }),
           weaponStats: normalizeWeaponStats(u.profile.stats?.weaponStats),
         };
+        const normalizedMissions = normalizeMissionsState(u.profile.missions);
+        if (!u.profile.missions || JSON.stringify(normalizedMissions) !== JSON.stringify(u.profile.missions)) {
+          u.profile.missions = normalizedMissions;
+          dirty = true;
+        }
         const seasonSynced = syncBattlePassSeason(u.profile);
         if (seasonSynced.profile !== u.profile) {
           u.profile = seasonSynced.profile;
@@ -487,6 +493,7 @@ async function startServer() {
         typeof seed?.easterEggUnlocked === 'boolean'
           ? seed.easterEggUnlocked
           : baseProfile.easterEggUnlocked,
+      missions: normalizeMissionsState(seed?.missions ?? baseProfile.missions),
       stats: {
         ...(seed?.stats ?? baseProfile.stats),
         weaponStats: normalizeWeaponStats(seed?.stats?.weaponStats),
@@ -632,6 +639,7 @@ async function startServer() {
         typeof incoming.easterEggUnlocked === 'boolean'
           ? incoming.easterEggUnlocked
           : user.profile.easterEggUnlocked,
+      missions: normalizeMissionsState(incoming.missions ?? user.profile.missions),
       stats: {
         ...(incoming.stats ?? user.profile.stats),
         weaponStats: normalizeWeaponStats(incoming.stats?.weaponStats ?? user.profile.stats?.weaponStats),
